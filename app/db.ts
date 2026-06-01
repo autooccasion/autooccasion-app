@@ -1,5 +1,5 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { pgTable, serial, varchar, text } from 'drizzle-orm/pg-core';
+import { pgTable, serial, varchar } from 'drizzle-orm/pg-core';
 import { eq } from 'drizzle-orm';
 import postgres from 'postgres';
 import { genSaltSync, hashSync } from 'bcrypt-ts';
@@ -24,43 +24,29 @@ export async function createUser(email: string, password: string) {
 }
 
 export async function getSetting(key: string): Promise<string | null> {
-  const settings = await ensureSettingsTableExists();
-  const rows = await db.select().from(settings).where(eq(settings.key, key));
-  return rows[0]?.value ?? null;
+  await client`
+    CREATE TABLE IF NOT EXISTS "Settings" (
+      id SERIAL PRIMARY KEY,
+      key VARCHAR(128) UNIQUE NOT NULL,
+      value TEXT NOT NULL
+    )
+  `;
+  const rows = await client`SELECT value FROM "Settings" WHERE key = ${key} LIMIT 1`;
+  return (rows[0]?.value as string) ?? null;
 }
 
 export async function setSetting(key: string, value: string): Promise<void> {
-  const settings = await ensureSettingsTableExists();
-  const existing = await db.select().from(settings).where(eq(settings.key, key));
-  if (existing.length > 0) {
-    await db.update(settings).set({ value }).where(eq(settings.key, key));
-  } else {
-    await db.insert(settings).values({ key, value });
-  }
-}
-
-async function ensureSettingsTableExists() {
-  const result = await client`
-    SELECT EXISTS (
-      SELECT FROM information_schema.tables
-      WHERE table_schema = 'public'
-      AND table_name = 'Settings'
-    );`;
-
-  if (!result[0].exists) {
-    await client`
-      CREATE TABLE "Settings" (
-        id SERIAL PRIMARY KEY,
-        key VARCHAR(128) UNIQUE NOT NULL,
-        value TEXT NOT NULL
-      );`;
-  }
-
-  return pgTable('Settings', {
-    id: serial('id').primaryKey(),
-    key: varchar('key', { length: 128 }),
-    value: text('value'),
-  });
+  await client`
+    CREATE TABLE IF NOT EXISTS "Settings" (
+      id SERIAL PRIMARY KEY,
+      key VARCHAR(128) UNIQUE NOT NULL,
+      value TEXT NOT NULL
+    )
+  `;
+  await client`
+    INSERT INTO "Settings" (key, value) VALUES (${key}, ${value})
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+  `;
 }
 
 async function ensureTableExists() {
