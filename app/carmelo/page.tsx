@@ -67,8 +67,13 @@ export default function CarmeloPage() {
         </button>
 
         {error && (
-          <div className="bg-red-950 border border-red-800 text-red-300 rounded-lg p-4 text-sm">
-            {error}
+          <div className="bg-red-950 border border-red-800 text-red-300 rounded-lg p-4 text-sm space-y-2">
+            <p>{error}</p>
+            {error.includes('Clé API') && (
+              <a href="/settings" className="underline text-red-200 block">
+                → Configurer la clé API ici
+              </a>
+            )}
           </div>
         )}
 
