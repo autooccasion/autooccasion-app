@@ -26,8 +26,8 @@ export async function createUser(email: string, password: string) {
 async function ensureTableExists() {
   const result = await client`
     SELECT EXISTS (
-      SELECT FROM information_schema.tables 
-      WHERE table_schema = 'public' 
+      SELECT FROM information_schema.tables
+      WHERE table_schema = 'public'
       AND table_name = 'User'
     );`;
 
