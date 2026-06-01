@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { buildCarmeloSystemPrompt } from '@/lib/carmelo/system-prompt';
 import { auth } from 'app/auth';
-import { getSetting } from 'app/db';
+import { cookies } from 'next/headers';
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -11,7 +11,8 @@ export async function POST(req: NextRequest) {
   }
 
   const apiKey =
-    process.env.ANTHROPIC_API_KEY || (await getSetting('ANTHROPIC_API_KEY'));
+    process.env.ANTHROPIC_API_KEY ||
+    cookies().get('gp_api_key')?.value;
 
   if (!apiKey) {
     return NextResponse.json(

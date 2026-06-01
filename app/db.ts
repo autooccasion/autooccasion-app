@@ -23,37 +23,11 @@ export async function createUser(email: string, password: string) {
   return await db.insert(users).values({ email, password: hash });
 }
 
-export async function getSetting(key: string): Promise<string | null> {
-  await client`
-    CREATE TABLE IF NOT EXISTS "Settings" (
-      id SERIAL PRIMARY KEY,
-      key VARCHAR(128) UNIQUE NOT NULL,
-      value TEXT NOT NULL
-    )
-  `;
-  const rows = await client`SELECT value FROM "Settings" WHERE key = ${key} LIMIT 1`;
-  return (rows[0]?.value as string) ?? null;
-}
-
-export async function setSetting(key: string, value: string): Promise<void> {
-  await client`
-    CREATE TABLE IF NOT EXISTS "Settings" (
-      id SERIAL PRIMARY KEY,
-      key VARCHAR(128) UNIQUE NOT NULL,
-      value TEXT NOT NULL
-    )
-  `;
-  await client`
-    INSERT INTO "Settings" (key, value) VALUES (${key}, ${value})
-    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-  `;
-}
-
 async function ensureTableExists() {
   const result = await client`
     SELECT EXISTS (
-      SELECT FROM information_schema.tables 
-      WHERE table_schema = 'public' 
+      SELECT FROM information_schema.tables
+      WHERE table_schema = 'public'
       AND table_name = 'User'
     );`;
 
