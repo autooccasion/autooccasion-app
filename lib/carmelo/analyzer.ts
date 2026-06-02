@@ -9,7 +9,7 @@ import { calculerScoreCapital }  from './modules/capital';
 import { comparerAvecVN }        from './modules/comparaison-vn';
 import { calculerVerdict }       from './modules/verdict';
 
-export { VehicleData, CarmeloResult } from './types';
+export type { VehicleData, CarmeloResult } from './types';
 
 // ─── Qualitative helper ────────────────────────────────────────────────────────
 
