@@ -92,11 +92,46 @@ export default function CarmeloPage() {
     ctValide: false, distanceKm: 50,
   });
 
-  const [result, setResult] = useState<CarmeloResult | null>(null);
+  const [result, setResult]             = useState<CarmeloResult | null>(null);
+  const [marketLoading, setMarketLoading] = useState(false);
+  const [marketError, setMarketError]     = useState<string | null>(null);
+  const [marketInfo, setMarketInfo]       = useState<{ source: string; nbAnnonces: number; fourchette: { min: number; max: number } } | null>(null);
 
   function set<K extends keyof VehicleData>(key: K, value: VehicleData[K]) {
     setData(prev => ({ ...prev, [key]: value }));
     setResult(null);
+  }
+
+  async function handleSearchMarket() {
+    if (!data.marque || !data.modele) return;
+    setMarketLoading(true);
+    setMarketError(null);
+    setMarketInfo(null);
+    try {
+      const res = await fetch('/api/carmelo/market-price', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          marque: data.marque,
+          modele: data.modele,
+          annee: data.annee,
+          kilometrage: data.kilometrage,
+          motorisation: data.motorisation,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Erreur serveur');
+      if (json.prixEstime > 0) {
+        set('prixMarcheEstime', json.prixEstime);
+        setMarketInfo({ source: json.source, nbAnnonces: json.nbAnnonces, fourchette: json.fourchette });
+      } else {
+        setMarketError('Aucune annonce trouvée — saisis le prix manuellement.');
+      }
+    } catch (e: unknown) {
+      setMarketError(e instanceof Error ? e.message : 'Erreur inconnue');
+    } finally {
+      setMarketLoading(false);
+    }
   }
 
   function handleAnalyze() {
@@ -189,7 +224,25 @@ export default function CarmeloPage() {
               <Input type="number" min={0} value={data.prixDemande || ''} placeholder="ex: 17500" onChange={e => set('prixDemande', parseFloat(e.target.value) || 0)} />
             </Field>
             <Field label="Prix marché estimé (€)">
-              <Input type="number" min={0} value={data.prixMarcheEstime || ''} placeholder="AutoScout24, Gocar…" onChange={e => set('prixMarcheEstime', parseFloat(e.target.value) || 0)} />
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <Input type="number" min={0} value={data.prixMarcheEstime || ''} placeholder="AutoScout24, Gocar…" onChange={e => set('prixMarcheEstime', parseFloat(e.target.value) || 0)} />
+                  <button
+                    type="button"
+                    onClick={handleSearchMarket}
+                    disabled={marketLoading || !data.marque || !data.modele}
+                    className="shrink-0 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-zinc-100 rounded-lg transition-colors whitespace-nowrap"
+                  >
+                    {marketLoading ? '⏳' : '🔍 Auto'}
+                  </button>
+                </div>
+                {marketError && <p className="text-xs text-red-400">{marketError}</p>}
+                {marketInfo && (
+                  <p className="text-xs text-green-400">
+                    ✓ {euro(data.prixMarcheEstime)} — {marketInfo.nbAnnonces} annonces · {marketInfo.source} · {euro(marketInfo.fourchette.min)}–{euro(marketInfo.fourchette.max)}
+                  </p>
+                )}
+              </div>
             </Field>
             <div className="col-span-2">
               <Field label="Prix VN remisé comparable (€) — optionnel">
