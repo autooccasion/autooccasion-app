@@ -10,7 +10,10 @@ function getThresholds(prixMarcheEstime: number): MargeThresholds {
   if (prixMarcheEstime < 20000) {
     return { cible: 3000, min: 2500, exceptionnelle: 2200 };
   }
-  return { cible: 4000, min: 3500, exceptionnelle: 3000 };
+  if (prixMarcheEstime <= 30000) {
+    return { cible: 4000, min: 3500, exceptionnelle: 3000 };
+  }
+  return { cible: 4500, min: 4000, exceptionnelle: 3500 };
 }
 
 export function getMargeCible(prixMarcheEstime: number): number {

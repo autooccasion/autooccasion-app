@@ -116,6 +116,62 @@ const MOTEUR_DB: MoteurEntry[] = [
     coutRisque: 700,
     niveauRisque: 'faible',
   },
+  {
+    nom: 'Renault 1.2 TCe',
+    codes: [],
+    keywords: ['1.2 tce', 'tce 115', 'tce 120', 'tce 130'],
+    marques: ['renault', 'nissan', 'dacia'],
+    fiabilite: 1,
+    defauts: [
+      'Chaîne distribution dans huile — casse fréquente',
+      'Consommation huile excessive',
+      'Coût réparation 3000-5000€',
+    ],
+    coutRisque: 4000,
+    niveauRisque: 'blacklist',
+  },
+  {
+    nom: 'Ford 1.0 EcoBoost (courroie humide)',
+    codes: [],
+    keywords: ['1.0 ecoboost', 'ecoboost 100', 'ecoboost 125', 'ecoboost 140'],
+    marques: ['ford'],
+    fiabilite: 2,
+    defauts: [
+      'Courroie distribution dans huile',
+      'Casse courroie = moteur HS',
+      'Versions <2018 à éviter absolument',
+    ],
+    coutRisque: 5000,
+    niveauRisque: 'eleve',
+  },
+  {
+    nom: 'Mercedes OM651',
+    codes: ['om651'],
+    keywords: ['2.1 cdi', '2.1cdi', '200cdi', '220cdi', '250cdi'],
+    marques: ['mercedes'],
+    fiabilite: 2,
+    defauts: [
+      'Swirl flaps — risque aspiration moteur',
+      'Chaîne distribution fragile versions <2014',
+      'Coût réparation swirl flaps 1500€',
+    ],
+    coutRisque: 2500,
+    niveauRisque: 'eleve',
+  },
+  {
+    nom: 'VW DSG DQ200 (7 vitesses sec)',
+    codes: ['dq200'],
+    keywords: ['dsg 7', '7-dsg', 'dq200', 's tronic 7'],
+    marques: ['volkswagen', 'vw', 'audi', 'seat', 'skoda'],
+    fiabilite: 2,
+    defauts: [
+      'Embrayage sec — à-coups fréquents',
+      'Mécatronique défaillante versions <2015',
+      'Remplacement mécatronique 1500-3000€',
+    ],
+    coutRisque: 2000,
+    niveauRisque: 'eleve',
+  },
 ];
 
 const RISK_SCORE: Record<NiveauRisque, number> = {

@@ -1,4 +1,4 @@
-import { VehicleData, CarmeloResult, RisqueMoteur } from './types';
+import { VehicleData, CarmeloResult, RisqueMoteur, DecisionVehicule } from './types';
 import { verifierExclusions }    from './modules/exclusions';
 import { calculerFrais }         from './modules/frais';
 import { getMargeCible, getMargeMin, calculerPrix, calculerScenarios, getZoneMarge } from './modules/marge';
@@ -8,6 +8,7 @@ import { calculerRotation }      from './modules/rotation';
 import { calculerScoreCapital }  from './modules/capital';
 import { comparerAvecVN }        from './modules/comparaison-vn';
 import { calculerVerdict }       from './modules/verdict';
+import { calculerScoreCarmelo }  from './modules/score-carmelo';
 
 export type { VehicleData, CarmeloResult } from './types';
 
