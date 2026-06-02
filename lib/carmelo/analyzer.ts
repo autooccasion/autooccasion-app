@@ -81,6 +81,17 @@ function buildAnalyseQualitative(
 
 // ─── Refus builder ─────────────────────────────────────────────────────────────
 
+const EMPTY_SCORE_CARMELO = {
+  rentabilite: 0,
+  rotation: 0,
+  fiabilite: 0,
+  popularite: 0,
+  immobilisation: 0,
+  historiqueEntretien: 0,
+  risqueMecanique: 0,
+  scoreTotal: 0,
+};
+
 function buildRefus(vehicule: string, raison: string): CarmeloResult {
   const emptyRisque: RisqueMoteur = {
     moteur: '—',
@@ -122,6 +133,7 @@ function buildRefus(vehicule: string, raison: string): CarmeloResult {
     scoreRotation: { valeur: 0, categorie: 'lente', delaiEstimeJours: 0, facteurs: [] },
     scoreCapitalImmobilise: 0,
     scoreRisqueMecanique: 0,
+    scoreCarmelo: EMPTY_SCORE_CARMELO,
 
     comparaisonVN: undefined,
 
@@ -132,6 +144,24 @@ function buildRefus(vehicule: string, raison: string): CarmeloResult {
     conclusion: raison,
     actionRecommandee: 'Passer. Ne pas contacter le vendeur.',
   };
+}
+
+// ─── Decision reconciliation ───────────────────────────────────────────────────
+
+function reconcilierDecision(verdictDecision: DecisionVehicule, scoreTotal: number): DecisionVehicule {
+  const scoreDecision: DecisionVehicule =
+    scoreTotal >= 80 ? 'OR' :
+    scoreTotal >= 60 ? 'VERT' :
+    scoreTotal >= 40 ? 'ORANGE' :
+    'ROUGE';
+
+  if (verdictDecision === 'ROUGE') return 'ROUGE'; // rule-based ROUGE always wins
+  if (verdictDecision === 'VERT' && scoreDecision === 'OR') return 'OR';
+  if (verdictDecision === 'VERT' && scoreDecision === 'VERT') return 'VERT';
+  if (verdictDecision === 'VERT' && scoreDecision === 'ORANGE') return 'ORANGE'; // conservative
+  if (verdictDecision === 'ORANGE' && scoreDecision === 'OR') return 'VERT'; // cap at VERT
+  if (verdictDecision === 'ORANGE' && scoreDecision === 'VERT') return 'VERT';
+  return verdictDecision; // default to verdict
 }
 
 // ─── Main export ───────────────────────────────────────────────────────────────
@@ -193,9 +223,22 @@ export function analyzeVehicle(data: VehicleData): CarmeloResult {
     margeCibleAtteinte,
   });
 
+  // 11. Score Carmelo 7 dimensions
+  const scoreCarmelo = calculerScoreCarmelo(
+    data,
+    marges.realiste,
+    prixAchatProbable,
+    scoreRotation,
+    scoreRisqueMecanique,
+    scoreCapitalImmobilise,
+  );
+
+  // 12. Reconcile decision with score
+  const decision = reconcilierDecision(verdict.decision, scoreCarmelo.scoreTotal);
+
   return {
     vehicule,
-    decision: verdict.decision,
+    decision,
 
     pointsForts:  qualitative.pointsForts,
     pointsFaibles: qualitative.pointsFaibles,
@@ -219,6 +262,7 @@ export function analyzeVehicle(data: VehicleData): CarmeloResult {
     scoreRotation,
     scoreCapitalImmobilise,
     scoreRisqueMecanique,
+    scoreCarmelo,
 
     comparaisonVN,
 

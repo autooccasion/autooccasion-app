@@ -4,9 +4,10 @@ import { useState } from 'react';
 import { analyzeVehicle, VehicleData, CarmeloResult } from '@/lib/carmelo/analyzer';
 
 const VERDICT_STYLE = {
-  VERT:   { bg: 'bg-green-950',  border: 'border-green-700',  text: 'text-green-300',  label: '🟢 VERT — ACHETER' },
-  ORANGE: { bg: 'bg-yellow-950', border: 'border-yellow-700', text: 'text-yellow-300', label: '🟠 ORANGE — NÉGOCIER' },
-  ROUGE:  { bg: 'bg-red-950',    border: 'border-red-700',    text: 'text-red-300',    label: '🔴 ROUGE — REFUSER' },
+  OR:     { bg: 'bg-yellow-900',  border: 'border-yellow-500',  text: 'text-yellow-200',  label: '🥇 OR — PRIORITAIRE' },
+  VERT:   { bg: 'bg-green-950',   border: 'border-green-700',   text: 'text-green-300',   label: '🟢 VERT — ACHETER' },
+  ORANGE: { bg: 'bg-yellow-950',  border: 'border-yellow-700',  text: 'text-yellow-300',  label: '🟠 ORANGE — NÉGOCIER' },
+  ROUGE:  { bg: 'bg-red-950',     border: 'border-red-700',     text: 'text-red-300',     label: '🔴 ROUGE — REFUSER' },
 };
 
 const RISQUE_STYLE: Record<string, string> = {
@@ -240,12 +241,12 @@ export default function CarmeloPage() {
             )}
             {!data.pneusOk && (
               <Field label="Devis pneus estimé (€)">
-                <Input type="number" min={0} placeholder="ex: 500 — laisser vide pour défaut 450€" value={data.devisPneus || ''} onChange={e => set('devisPneus', parseFloat(e.target.value) || undefined as unknown as number)} />
+                <Input type="number" min={0} placeholder="ex: 500 — laisser vide pour défaut 500€" value={data.devisPneus || ''} onChange={e => set('devisPneus', parseFloat(e.target.value) || undefined as unknown as number)} />
               </Field>
             )}
             {!data.freinsOk && (
               <Field label="Devis freins estimé (€)">
-                <Input type="number" min={0} placeholder="ex: 350 — laisser vide pour défaut 300€" value={data.devisFreins || ''} onChange={e => set('devisFreins', parseFloat(e.target.value) || undefined as unknown as number)} />
+                <Input type="number" min={0} placeholder="ex: 350 — laisser vide pour défaut 350€" value={data.devisFreins || ''} onChange={e => set('devisFreins', parseFloat(e.target.value) || undefined as unknown as number)} />
               </Field>
             )}
             {!data.carrosseriePropre && (
@@ -356,6 +357,7 @@ export default function CarmeloPage() {
                     {result.fraisDetail.freins    > 0 && <Row label="Freins"     value={euro(result.fraisDetail.freins)} />}
                     {result.fraisDetail.transport > 0 && <Row label="Transport"  value={euro(result.fraisDetail.transport)} />}
                     {result.fraisDetail.carrosserie > 0 && <Row label="Carrosserie" value={euro(result.fraisDetail.carrosserie)} />}
+                    {result.fraisDetail.garantieVendue && result.fraisDetail.garantieVendue > 0 && <Row label="Garantie vendue (prévoir)" value={euro(result.fraisDetail.garantieVendue)} />}
                     <Row label="Total frais"              value={euro(result.fraisDetail.total)} />
                     <Row label="Coussin négociation (3%)" value={euro(result.coussinNegociation)} />
                     <Row label="Marge cible"              value={euro(result.margeCible)} />
@@ -415,9 +417,41 @@ export default function CarmeloPage() {
                 </div>
 
                 {/* Action recommandée */}
-                <div className={`rounded-lg p-4 border-2 ${result.decision === 'VERT' ? 'bg-green-950 border-green-600' : result.decision === 'ORANGE' ? 'bg-yellow-950 border-yellow-600' : 'bg-red-950 border-red-600'}`}>
+                <div className={`rounded-lg p-4 border-2 ${result.decision === 'OR' ? 'bg-yellow-900 border-yellow-500' : result.decision === 'VERT' ? 'bg-green-950 border-green-600' : result.decision === 'ORANGE' ? 'bg-yellow-950 border-yellow-600' : 'bg-red-950 border-red-600'}`}>
                   <p className="text-xs text-zinc-400 uppercase mb-1 font-semibold">Action recommandée</p>
                   <p className={`text-sm font-medium leading-relaxed ${v.text}`}>{result.actionRecommandee}</p>
+                </div>
+
+                {/* Score Carmelo 7 dimensions */}
+                <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-zinc-500 uppercase tracking-wide font-semibold">Score Carmelo 7 dimensions</p>
+                    <span className={`text-2xl font-bold ${result.scoreCarmelo.scoreTotal >= 80 ? 'text-yellow-300' : result.scoreCarmelo.scoreTotal >= 60 ? 'text-green-400' : result.scoreCarmelo.scoreTotal >= 40 ? 'text-yellow-400' : 'text-red-400'}`}>
+                      {result.scoreCarmelo.scoreTotal}<span className="text-sm text-zinc-400">/100</span>
+                    </span>
+                  </div>
+                  {([
+                    { key: 'rentabilite',        label: 'Rentabilité',           value: result.scoreCarmelo.rentabilite },
+                    { key: 'rotation',            label: 'Rotation stock',        value: result.scoreCarmelo.rotation },
+                    { key: 'fiabilite',           label: 'Fiabilité moteur',      value: result.scoreCarmelo.fiabilite },
+                    { key: 'popularite',          label: 'Popularité marché',     value: result.scoreCarmelo.popularite },
+                    { key: 'immobilisation',      label: 'Risque immobilisation', value: result.scoreCarmelo.immobilisation },
+                    { key: 'historiqueEntretien', label: 'Historique entretien',  value: result.scoreCarmelo.historiqueEntretien },
+                    { key: 'risqueMecanique',     label: 'Risque mécanique',      value: result.scoreCarmelo.risqueMecanique },
+                  ] as const).map(({ key, label, value }) => (
+                    <div key={key} className="space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-zinc-400">{label}</span>
+                        <span className="text-zinc-300 font-medium">{value}/100</span>
+                      </div>
+                      <div className="w-full bg-zinc-800 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full transition-all ${value >= 75 ? 'bg-green-500' : value >= 50 ? 'bg-yellow-500' : value >= 25 ? 'bg-orange-500' : 'bg-red-500'}`}
+                          style={{ width: `${value}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
                 <p className="text-xs text-zinc-600">
