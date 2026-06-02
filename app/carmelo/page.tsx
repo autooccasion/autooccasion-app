@@ -99,6 +99,17 @@ export default function CarmeloPage() {
     setResult(null);
   }
 
+  function handleOpenMarket() {
+    const make  = encodeURIComponent(data.marque.toLowerCase().trim());
+    const model = encodeURIComponent(data.modele.toLowerCase().trim());
+    const kmFrom = Math.max(0, data.kilometrage - 20000);
+    const kmTo   = data.kilometrage + 20000;
+    const yearFrom = data.annee - 1;
+    const yearTo   = data.annee + 1;
+    const as24 = `https://www.autoscout24.be/lst/${make}/${model}?atype=C&cy=B&fregfrom=${yearFrom}&fregto=${yearTo}&kmfrom=${kmFrom}&kmto=${kmTo}&sort=age&desc=0`;
+    window.open(as24, '_blank');
+  }
+
   function handleAnalyze() {
     const payload: VehicleData = {
       ...data,
@@ -189,7 +200,18 @@ export default function CarmeloPage() {
               <Input type="number" min={0} value={data.prixDemande || ''} placeholder="ex: 17500" onChange={e => set('prixDemande', parseFloat(e.target.value) || 0)} />
             </Field>
             <Field label="Prix marché estimé (€)">
-              <Input type="number" min={0} value={data.prixMarcheEstime || ''} placeholder="AutoScout24, Gocar…" onChange={e => set('prixMarcheEstime', parseFloat(e.target.value) || 0)} />
+              <div className="flex gap-2">
+                <Input type="number" min={0} value={data.prixMarcheEstime || ''} placeholder="Saisis ou clique 🔍" onChange={e => set('prixMarcheEstime', parseFloat(e.target.value) || 0)} />
+                <button
+                  type="button"
+                  onClick={handleOpenMarket}
+                  disabled={!data.marque || !data.modele}
+                  title="Ouvre AutoScout24.be avec le véhicule pré-filtré"
+                  className="shrink-0 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-zinc-100 rounded-lg transition-colors whitespace-nowrap"
+                >
+                  🔍 AS24
+                </button>
+              </div>
             </Field>
             <div className="col-span-2">
               <Field label="Prix VN remisé comparable (€) — optionnel">
