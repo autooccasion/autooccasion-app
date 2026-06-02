@@ -1,279 +1,231 @@
-export interface VehicleData {
-  marque: string;
-  modele: string;
-  annee: number;
-  kilometrage: number;
-  motorisation: string;
-  boite: 'manuelle' | 'automatique';
-  couleur: string;
-  prixDemande: number;
-  prixMarcheEstime: number;
-  entretienRecent: boolean;
-  pneusOk: boolean;
-  freinsOk: boolean;
-  carrosseriePropre: boolean;
-  garantieConstructeur: boolean;
-  ctValide: boolean;
-  distanceKm: number;
-  devisCarrosserie: number;
-}
+import { VehicleData, CarmeloResult, RisqueMoteur } from './types';
+import { verifierExclusions }    from './modules/exclusions';
+import { calculerFrais }         from './modules/frais';
+import { getMargeCible, getMargeMin, calculerPrix, calculerScenarios, getZoneMarge } from './modules/marge';
+import { analyserRisqueMecanique } from './modules/risque';
+import { analyserCouleur }       from './modules/couleur';
+import { calculerRotation }      from './modules/rotation';
+import { calculerScoreCapital }  from './modules/capital';
+import { comparerAvecVN }        from './modules/comparaison-vn';
+import { calculerVerdict }       from './modules/verdict';
 
-export interface CarmeloResult {
-  vehicule: string;
-  decision: 'VERT' | 'ORANGE' | 'ROUGE';
-  raisonRefus: string;
-  pointsForts: string[];
-  pointsFaibles: string[];
-  risquesMecaniques: string[];
-  risquesCommerciaux: string[];
-  coherenceKilometrage: string;
-  prixMarcheReel: number;
-  prixVenteRealiste: number;
-  fraisCT: number;
-  fraisPreparation: number;
-  fraisPublicite: number;
-  fraisEntretien: number;
-  fraisPneus: number;
-  fraisTransport: number;
-  fraisGarantie: number;
-  fraisCarrosserie: number;
-  fraisTotal: number;
-  coussinNegociation: number;
-  margeCible: number;
-  prixMaximum: number;
-  margeEstimee: number;
-  zoneMarge: 'verte' | 'orange' | 'rouge';
-  scoreRotation: number;
-  rotationJours: number;
-  niveauConfiance: number;
-  conclusion: string;
-}
+export type { VehicleData, CarmeloResult } from './types';
+
+// ─── Qualitative helper ────────────────────────────────────────────────────────
 
 const MARQUES_PREFEREES = ['kia', 'hyundai', 'toyota', 'volkswagen', 'vw', 'audi', 'bmw', 'mercedes'];
-const COULEURS_DIFFICILES = ['rouge', 'red', 'beige', 'orange', 'jaune', 'yellow', 'vert', 'green', 'violet', 'rose', 'pink'];
 
-function isPureTech(motorisation: string): boolean {
-  const m = motorisation.toLowerCase();
-  return m.includes('puretech') || (m.includes('1.0') && m.includes('psa')) || (m.includes('1.2') && m.includes('psa'));
-}
-
-function isCouleurDifficile(couleur: string): boolean {
-  const c = couleur.toLowerCase();
-  return COULEURS_DIFFICILES.some(d => c.includes(d));
-}
-
-function getRotationScore(data: VehicleData): number {
-  let score = 7;
-  const marque = data.marque.toLowerCase();
-
-  if (['kia', 'hyundai', 'toyota'].some(m => marque.includes(m))) score += 1;
-  if (['volkswagen', 'vw', 'golf', 'polo'].some(m => marque.includes(m) || data.modele.toLowerCase().includes(m))) score += 1;
-  if (['bmw', 'mercedes', 'audi'].some(m => marque.includes(m))) score += 0;
-
-  if (data.boite === 'automatique') score += 1;
-  if (data.boite === 'manuelle') score -= 1;
-
-  if (isCouleurDifficile(data.couleur)) score -= 2;
-
-  if (data.kilometrage < 30000) score += 1;
-  if (data.kilometrage > 60000) score -= 1;
-
-  if (data.annee >= 2023) score += 1;
-  if (data.annee <= 2021) score -= 1;
-
-  if (data.garantieConstructeur) score += 1;
-
-  return Math.max(1, Math.min(10, score));
-}
-
-function getRotationJours(score: number): number {
-  if (score >= 9) return 20;
-  if (score >= 7) return 45;
-  if (score >= 5) return 75;
-  return 100;
-}
-
-function calculerFrais(data: VehicleData) {
-  const ct = data.ctValide ? 0 : 105;
-  const preparation = 100;
-  const publicite = 200;
-  const entretien = data.entretienRecent ? 0 : 250;
-  const pneus = data.pneusOk ? 0 : 450;
-  const freins = data.freinsOk ? 0 : 0; // inclus dans entretien
-  const transport = data.distanceKm < 50 ? 0 : data.distanceKm < 200 ? 150 : 350;
-  const garantie = data.garantieConstructeur ? 0 : 400;
-  const carrosserie = data.carrosseriePropre ? 0 : data.devisCarrosserie;
-  const total = ct + preparation + publicite + entretien + pneus + transport + garantie + carrosserie;
-  return { ct, preparation, publicite, entretien, pneus, transport, garantie, carrosserie, total };
-}
-
-function getMargeCible(prixVente: number): number {
-  return prixVente >= 25000 ? 4000 : 3000;
-}
-
-export function analyzeVehicle(data: VehicleData): CarmeloResult {
-  const vehicule = `${data.marque} ${data.modele} ${data.annee} / ${data.kilometrage.toLocaleString('fr')} km / ${data.motorisation}`;
-
-  // — Exclusions absolues —
-  if (isPureTech(data.motorisation)) {
-    return refus(vehicule, 'Moteur PSA PureTech — exclusion absolue GP-CARS. Fiabilité insuffisante.', data);
-  }
-  if (data.annee < 2021) {
-    return refus(vehicule, `Véhicule trop ancien (${data.annee}) — critère minimum 2021.`, data);
-  }
-  if (data.kilometrage > 80000) {
-    return refus(vehicule, `Kilométrage trop élevé (${data.kilometrage.toLocaleString('fr')} km) — maximum 80 000 km.`, data);
-  }
-
-  const frais = calculerFrais(data);
-  const prixVenteRealiste = data.prixMarcheEstime * 0.97;
-  const margeCible = getMargeCible(prixVenteRealiste);
-  const coussin = Math.round(prixVenteRealiste * 0.03);
-  const prixMaximum = Math.round(prixVenteRealiste - margeCible - frais.total - coussin);
-  const margeEstimee = prixVenteRealiste - data.prixDemande - frais.total - coussin;
-  const scoreRotation = getRotationScore(data);
-  const rotationJours = getRotationJours(scoreRotation);
-
+function buildAnalyseQualitative(
+  data: VehicleData,
+  couleurAnalysis: ReturnType<typeof analyserCouleur>,
+  scoreRisqueMecanique: number,
+) {
   const pointsForts: string[] = [];
   const pointsFaibles: string[] = [];
-  const risquesMecaniques: string[] = [];
   const risquesCommerciaux: string[] = [];
 
   // Points forts
-  if (data.garantieConstructeur) pointsForts.push('Garantie constructeur restante');
-  if (data.entretienRecent) pointsForts.push('Entretien récent documenté');
+  if (data.garantieConstructeur)  pointsForts.push('Garantie constructeur restante');
+  if (data.entretienRecent)        pointsForts.push('Entretien récent documenté');
   if (data.boite === 'automatique') pointsForts.push('Boîte automatique — forte demande');
-  if (data.carrosseriePropre) pointsForts.push('Carrosserie sans défaut');
-  if (data.kilometrage < 40000) pointsForts.push('Kilométrage bas');
-  if (data.annee >= 2023) pointsForts.push('Véhicule récent');
-  if (data.ctValide) pointsForts.push('CT valide — pas de frais');
-  if (MARQUES_PREFEREES.some(m => data.marque.toLowerCase().includes(m))) pointsForts.push('Marque recherchée sur le marché belge');
+  if (data.carrosseriePropre)      pointsForts.push('Carrosserie sans défaut');
+  if (data.kilometrage < 40000)    pointsForts.push('Kilométrage bas (<40k)');
+  if (data.annee >= 2023)          pointsForts.push('Véhicule récent (≥2023)');
+  if (data.ctValide)               pointsForts.push('CT valide — pas de frais');
+  if (!couleurAnalysis.penalite)   pointsForts.push(`Couleur favorable (${data.couleur})`);
+  if (scoreRisqueMecanique <= 2)   pointsForts.push('Moteur très fiable — risque mécanique minimal');
+  if (MARQUES_PREFEREES.some(m => data.marque.toLowerCase().includes(m))) {
+    pointsForts.push('Marque recherchée sur le marché belge');
+  }
 
   // Points faibles
-  if (!data.entretienRecent) pointsFaibles.push('Entretien à prévoir — frais certains');
-  if (!data.pneusOk) pointsFaibles.push('Pneus à remplacer');
+  if (!data.entretienRecent)   pointsFaibles.push('Entretien à prévoir — frais certains');
+  if (!data.pneusOk)           pointsFaibles.push('Pneus à remplacer');
+  if (!data.freinsOk)          pointsFaibles.push('Freins à vérifier/remplacer');
   if (!data.carrosseriePropre) pointsFaibles.push('Carrosserie à reprendre');
-  if (isCouleurDifficile(data.couleur)) pointsFaibles.push(`Couleur difficile (${data.couleur}) — délai de vente allongé`);
+  if (couleurAnalysis.penalite) pointsFaibles.push(couleurAnalysis.explication);
   if (data.boite === 'manuelle') pointsFaibles.push('Boîte manuelle — demande plus faible');
   if (!data.garantieConstructeur) pointsFaibles.push('Hors garantie constructeur');
-  if (data.kilometrage > 60000) pointsFaibles.push('Kilométrage élevé');
-
-  // Risques mécaniques
-  const mot = data.motorisation.toLowerCase();
-  if (mot.includes('1.0') || mot.includes('1.2')) risquesMecaniques.push('Petit moteur — surveiller turbo et chaîne');
-  if (mot.includes('diesel') && data.kilometrage > 50000) risquesMecaniques.push('Diesel > 50 000 km — surveiller FAP et injection');
-  if (data.marque.toLowerCase().includes('bmw') || data.marque.toLowerCase().includes('mercedes')) {
-    risquesMecaniques.push('Marque premium — coûts de réparation élevés hors garantie');
-  }
-  if (risquesMecaniques.length === 0) risquesMecaniques.push('Aucun risque mécanique majeur identifié');
+  if (data.kilometrage > 60000)  pointsFaibles.push('Kilométrage élevé (>60k)');
 
   // Risques commerciaux
-  if (isCouleurDifficile(data.couleur)) risquesCommerciaux.push('Couleur peu recherchée — immobilisation probable');
-  if (scoreRotation < 6) risquesCommerciaux.push('Rotation lente estimée — risque d\'immobilisation');
-  if (data.prixDemande > prixMaximum) risquesCommerciaux.push('Prix demandé supérieur au maximum — négociation impérative');
-  if (risquesCommerciaux.length === 0) risquesCommerciaux.push('Aucun risque commercial majeur identifié');
+  if (couleurAnalysis.penalite) {
+    risquesCommerciaux.push(`Couleur peu recherchée (${data.couleur}) — délai de vente allongé`);
+  }
+  if (scoreRisqueMecanique >= 8) {
+    risquesCommerciaux.push('Risque mécanique élevé — peut freiner la revente');
+  }
+  if (risquesCommerciaux.length === 0) {
+    risquesCommerciaux.push('Aucun risque commercial majeur identifié');
+  }
 
   // Cohérence kilométrage
   const kmParAn = data.kilometrage / Math.max(1, 2025 - data.annee);
-  let coherence = '';
-  if (kmParAn < 5000) coherence = 'SUSPECT — kilométrage anormalement bas, vérifier historique';
-  else if (kmParAn < 25000) coherence = 'OUI — kilométrage cohérent';
-  else if (kmParAn < 35000) coherence = 'OUI — kilométrage légèrement élevé mais acceptable';
-  else coherence = 'ÉLEVÉ — usage intensif, surveiller l\'état mécanique';
+  let coherenceKilometrage: string;
+  if (kmParAn < 5000)  coherenceKilometrage = 'SUSPECT — kilométrage anormalement bas, vérifier historique';
+  else if (kmParAn < 25000) coherenceKilometrage = 'OUI — kilométrage cohérent';
+  else if (kmParAn < 35000) coherenceKilometrage = 'OUI — kilométrage légèrement élevé mais acceptable';
+  else coherenceKilometrage = 'ÉLEVÉ — usage intensif, surveiller l\'état mécanique';
 
-  // Zone marge et verdict
-  let zoneMarge: 'verte' | 'orange' | 'rouge';
-  let decision: 'VERT' | 'ORANGE' | 'ROUGE';
-  let conclusion = '';
-  let niveauConfiance = 70;
-
+  // Niveau de confiance
+  let niveauConfiance = 65;
   if (data.garantieConstructeur && data.entretienRecent) niveauConfiance += 15;
-  if (data.carrosseriePropre && data.pneusOk) niveauConfiance += 10;
-  if (data.prixMarcheEstime === 0) niveauConfiance -= 20;
+  if (data.carrosseriePropre && data.pneusOk)           niveauConfiance += 10;
+  if (data.prixMarcheEstime === 0)                       niveauConfiance -= 20;
+  if (scoreRisqueMecanique >= 8)                         niveauConfiance -= 15;
+  niveauConfiance = Math.max(20, Math.min(95, niveauConfiance));
 
-  if (margeEstimee >= margeCible) {
-    zoneMarge = 'verte';
-  } else if (margeEstimee >= margeCible * 0.85) {
-    zoneMarge = 'orange';
-  } else {
-    zoneMarge = 'rouge';
-  }
-
-  if (zoneMarge === 'verte' && scoreRotation >= 6) {
-    decision = 'VERT';
-    conclusion = `Bonne affaire. Marge en zone verte (${Math.round(margeEstimee).toLocaleString('fr')} €) avec rotation estimée à ${rotationJours} jours. Acquérir si le prix demandé (${data.prixDemande.toLocaleString('fr')} €) est négociable à ${prixMaximum.toLocaleString('fr')} € maximum.`;
-  } else if (zoneMarge === 'orange' && scoreRotation >= 7) {
-    decision = 'ORANGE';
-    conclusion = `Véhicule intéressant mais marge limite (${Math.round(margeEstimee).toLocaleString('fr')} €). Acceptable uniquement si négociation jusqu'à ${prixMaximum.toLocaleString('fr')} € et rotation confirmée rapide.`;
-  } else if (data.prixDemande > prixMaximum) {
-    decision = 'ORANGE';
-    conclusion = `Prix demandé (${data.prixDemande.toLocaleString('fr')} €) trop élevé. Négocier impérativement à ${prixMaximum.toLocaleString('fr')} € maximum pour atteindre la marge cible.`;
-  } else {
-    decision = 'ROUGE';
-    conclusion = `Marge insuffisante (${Math.round(margeEstimee).toLocaleString('fr')} €) — en dessous du seuil GP-CARS. Passer au suivant ou faire une offre très basse.`;
-  }
-
-  return {
-    vehicule,
-    decision,
-    raisonRefus: '',
-    pointsForts,
-    pointsFaibles,
-    risquesMecaniques,
-    risquesCommerciaux,
-    coherenceKilometrage: coherence,
-    prixMarcheReel: data.prixMarcheEstime,
-    prixVenteRealiste: Math.round(prixVenteRealiste),
-    fraisCT: frais.ct,
-    fraisPreparation: frais.preparation,
-    fraisPublicite: frais.publicite,
-    fraisEntretien: frais.entretien,
-    fraisPneus: frais.pneus,
-    fraisTransport: frais.transport,
-    fraisGarantie: frais.garantie,
-    fraisCarrosserie: frais.carrosserie,
-    fraisTotal: frais.total,
-    coussinNegociation: coussin,
-    margeCible,
-    prixMaximum,
-    margeEstimee: Math.round(margeEstimee),
-    zoneMarge,
-    scoreRotation,
-    rotationJours,
-    niveauConfiance: Math.min(95, niveauConfiance),
-    conclusion,
-  };
+  return { pointsForts, pointsFaibles, risquesCommerciaux, coherenceKilometrage, niveauConfiance };
 }
 
-function refus(vehicule: string, raison: string, data: VehicleData): CarmeloResult {
+// ─── Refus builder ─────────────────────────────────────────────────────────────
+
+function buildRefus(vehicule: string, raison: string): CarmeloResult {
+  const emptyRisque: RisqueMoteur = {
+    moteur: '—',
+    fiabilite: 0,
+    defautsConnus: [],
+    coutRisqueMoyen: 0,
+    niveauRisque: 'modere',
+    blacklisted: false,
+  };
+
   return {
     vehicule,
     decision: 'ROUGE',
     raisonRefus: raison,
+
     pointsForts: [],
     pointsFaibles: [],
-    risquesMecaniques: [],
+    risquesMecaniques: [emptyRisque],
     risquesCommerciaux: [],
+    alertes: [],
     coherenceKilometrage: '—',
+
     prixMarcheReel: 0,
     prixVenteRealiste: 0,
-    fraisCT: 0,
-    fraisPreparation: 0,
-    fraisPublicite: 0,
-    fraisEntretien: 0,
-    fraisPneus: 0,
-    fraisTransport: 0,
-    fraisGarantie: 0,
-    fraisCarrosserie: 0,
-    fraisTotal: 0,
-    coussinNegociation: 0,
+    prixAchatCible: 0,
+    prixAchatMaximum: 0,
+    prixAchatProbable: 0,
+
+    fraisDetail: {
+      ct: 0, preparation: 0, publicite: 0,
+      entretien: 0, pneus: 0, freins: 0,
+      carrosserie: 0, transport: 0, total: 0,
+    },
+
+    marges: { pessimiste: 0, realiste: 0, optimiste: 0 },
     margeCible: 0,
-    prixMaximum: 0,
-    margeEstimee: 0,
     zoneMarge: 'rouge',
-    scoreRotation: 0,
-    rotationJours: 0,
+
+    scoreRotation: { valeur: 0, categorie: 'lente', delaiEstimeJours: 0, facteurs: [] },
+    scoreCapitalImmobilise: 0,
+    scoreRisqueMecanique: 0,
+
+    comparaisonVN: undefined,
+
+    coussinNegociation: 0,
+    margeCibleAtteinte: false,
+    ecartPrixDemandePct: 0,
     niveauConfiance: 100,
     conclusion: raison,
+    actionRecommandee: 'Passer. Ne pas contacter le vendeur.',
+  };
+}
+
+// ─── Main export ───────────────────────────────────────────────────────────────
+
+export function analyzeVehicle(data: VehicleData): CarmeloResult {
+  const vehicule = `${data.marque} ${data.modele} ${data.annee} / ${data.kilometrage.toLocaleString('fr')} km / ${data.motorisation}`;
+
+  // 1. Exclusions
+  const exclusion = verifierExclusions(data);
+  if (exclusion.exclu) {
+    return buildRefus(vehicule, exclusion.raison ?? 'Véhicule exclu.');
+  }
+
+  // 2. Frais
+  const fraisDetail = calculerFrais(data);
+
+  // 3. Marges & prix
+  const margeCible = getMargeCible(data.prixMarcheEstime);
+  const margeMin   = getMargeMin(data.prixMarcheEstime);
+  const prix       = calculerPrix(data.prixMarcheEstime, fraisDetail.total, margeCible, margeMin);
+  const { prixVenteRealiste, coussinNegociation, prixAchatCible, prixAchatMaximum, prixAchatProbable } = prix;
+
+  const marges   = calculerScenarios(prixVenteRealiste, data.prixDemande, prixAchatProbable, prixAchatCible, fraisDetail.total, coussinNegociation);
+  const zoneMarge = getZoneMarge(marges.pessimiste, data.prixMarcheEstime);
+
+  // 4. Risque mécanique
+  const { risques: risquesMecaniques, scoreMecanique: scoreRisqueMecanique } = analyserRisqueMecanique(data);
+
+  // 5. Couleur
+  const couleurAnalysis = analyserCouleur(data);
+
+  // 6. Rotation
+  const scoreRotation = calculerRotation(data, couleurAnalysis);
+
+  // 7. Capital immobilisé
+  const scoreCapitalImmobilise = calculerScoreCapital(prixAchatProbable, scoreRotation, scoreRisqueMecanique);
+
+  // 8. Comparaison VN
+  const comparaisonVN = comparerAvecVN(
+    data.prixVNReference && data.prixVNReference > 0 ? data.prixVNReference : undefined,
+    data.prixMarcheEstime,
+  );
+
+  // 9. Analyse qualitative
+  const qualitative = buildAnalyseQualitative(data, couleurAnalysis, scoreRisqueMecanique);
+  const margeCibleAtteinte = marges.pessimiste >= margeCible;
+
+  // 10. Verdict
+  const verdict = calculerVerdict({
+    prixDemande: data.prixDemande,
+    prixAchatMaximum,
+    prixAchatCible,
+    prixAchatProbable,
+    zoneMarge,
+    scoreRisqueMecanique,
+    scoreCapitalImmobilise,
+    scoreRotation,
+    comparaisonVN,
+    margeCibleAtteinte,
+  });
+
+  return {
+    vehicule,
+    decision: verdict.decision,
+
+    pointsForts:  qualitative.pointsForts,
+    pointsFaibles: qualitative.pointsFaibles,
+    risquesMecaniques,
+    risquesCommerciaux: qualitative.risquesCommerciaux,
+    alertes: verdict.alertes,
+    coherenceKilometrage: qualitative.coherenceKilometrage,
+
+    prixMarcheReel:    data.prixMarcheEstime,
+    prixVenteRealiste: Math.round(prixVenteRealiste),
+    prixAchatCible,
+    prixAchatMaximum,
+    prixAchatProbable,
+
+    fraisDetail,
+
+    marges,
+    margeCible,
+    zoneMarge,
+
+    scoreRotation,
+    scoreCapitalImmobilise,
+    scoreRisqueMecanique,
+
+    comparaisonVN,
+
+    coussinNegociation,
+    margeCibleAtteinte,
+    ecartPrixDemandePct: verdict.ecartPrixDemandePct,
+    niveauConfiance:     qualitative.niveauConfiance,
+    conclusion:          verdict.conclusion,
+    actionRecommandee:   verdict.actionRecommandee,
   };
 }

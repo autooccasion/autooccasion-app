@@ -9,6 +9,22 @@ const VERDICT_STYLE = {
   ROUGE:  { bg: 'bg-red-950',    border: 'border-red-700',    text: 'text-red-300',    label: '🔴 ROUGE — REFUSER' },
 };
 
+const RISQUE_STYLE: Record<string, string> = {
+  blacklist:  'text-red-400',
+  eleve:      'text-orange-400',
+  modere:     'text-yellow-400',
+  faible:     'text-green-400',
+  excellent:  'text-emerald-400',
+};
+
+const RISQUE_LABEL: Record<string, string> = {
+  blacklist:  'BLACKLIST',
+  eleve:      'ÉLEVÉ',
+  modere:     'MODÉRÉ',
+  faible:     'FAIBLE',
+  excellent:  'EXCELLENT',
+};
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
@@ -66,10 +82,14 @@ export default function CarmeloPage() {
   const [data, setData] = useState<VehicleData>({
     marque: '', modele: '', annee: 2023, kilometrage: 40000,
     motorisation: '', boite: 'automatique', couleur: 'gris',
-    prixDemande: 0, prixMarcheEstime: 0,
+    typeVehicule: 'suv',
+    finition: '',
+    codeMoteur: '',
+    paysOrigine: 'BE',
+    prixDemande: 0, prixMarcheEstime: 0, prixVNReference: 0,
     entretienRecent: true, pneusOk: true, freinsOk: true,
     carrosseriePropre: true, garantieConstructeur: false,
-    ctValide: false, distanceKm: 50, devisCarrosserie: 0,
+    ctValide: false, distanceKm: 50,
   });
 
   const [result, setResult] = useState<CarmeloResult | null>(null);
@@ -80,7 +100,13 @@ export default function CarmeloPage() {
   }
 
   function handleAnalyze() {
-    setResult(analyzeVehicle(data));
+    const payload: VehicleData = {
+      ...data,
+      prixVNReference: data.prixVNReference && data.prixVNReference > 0 ? data.prixVNReference : undefined,
+      codeMoteur:  data.codeMoteur  || undefined,
+      finition:    data.finition    || undefined,
+    };
+    setResult(analyzeVehicle(payload));
   }
 
   const v = result ? VERDICT_STYLE[result.decision] : null;
@@ -115,13 +141,40 @@ export default function CarmeloPage() {
             <Field label="Motorisation">
               <Input placeholder="1.0 T-GDI 120ch, 2.0 TDI…" value={data.motorisation} onChange={e => set('motorisation', e.target.value)} />
             </Field>
+            <Field label="Code moteur (optionnel)">
+              <Input placeholder="N47, EA211, B47…" value={data.codeMoteur ?? ''} onChange={e => set('codeMoteur', e.target.value)} />
+            </Field>
             <Field label="Couleur">
               <Input placeholder="Gris, Blanc, Bleu…" value={data.couleur} onChange={e => set('couleur', e.target.value)} />
+            </Field>
+            <Field label="Finition (optionnel)">
+              <Input placeholder="GTI, AMG Line, Sport…" value={data.finition ?? ''} onChange={e => set('finition', e.target.value)} />
+            </Field>
+            <Field label="Type de véhicule">
+              <Select value={data.typeVehicule} onChange={e => set('typeVehicule', e.target.value as VehicleData['typeVehicule'])}>
+                <option value="citadine">Citadine</option>
+                <option value="berline">Berline</option>
+                <option value="suv">SUV</option>
+                <option value="break">Break</option>
+                <option value="sportive">Sportive</option>
+                <option value="utilitaire">Utilitaire</option>
+                <option value="autre">Autre</option>
+              </Select>
             </Field>
             <Field label="Boîte de vitesses">
               <Select value={data.boite} onChange={e => set('boite', e.target.value as 'manuelle' | 'automatique')}>
                 <option value="automatique">Automatique</option>
                 <option value="manuelle">Manuelle</option>
+              </Select>
+            </Field>
+            <Field label="Pays d'origine">
+              <Select value={data.paysOrigine} onChange={e => set('paysOrigine', e.target.value as VehicleData['paysOrigine'])}>
+                <option value="BE">Belgique</option>
+                <option value="FR">France</option>
+                <option value="DE">Allemagne</option>
+                <option value="NL">Pays-Bas</option>
+                <option value="LU">Luxembourg</option>
+                <option value="autre">Autre</option>
               </Select>
             </Field>
             <Field label="Distance (km depuis GP-CARS)">
@@ -138,24 +191,47 @@ export default function CarmeloPage() {
             <Field label="Prix marché estimé (€)">
               <Input type="number" min={0} value={data.prixMarcheEstime || ''} placeholder="AutoScout24, Gocar…" onChange={e => set('prixMarcheEstime', parseFloat(e.target.value) || 0)} />
             </Field>
+            <div className="col-span-2">
+              <Field label="Prix VN remisé comparable (€) — optionnel">
+                <Input type="number" min={0} value={data.prixVNReference || ''} placeholder="ex: 22000 — laisser vide si inconnu" onChange={e => set('prixVNReference', parseFloat(e.target.value) || 0)} />
+              </Field>
+            </div>
           </div>
 
           <hr className="border-zinc-800" />
           <p className="text-xs text-zinc-500 uppercase tracking-wide font-semibold">État du véhicule</p>
           <div className="grid grid-cols-2 gap-3">
-            <Check id="entretien" label="Entretien récent documenté" checked={data.entretienRecent} onChange={v => set('entretienRecent', v)} />
-            <Check id="pneus" label="Pneus ≥ 50 %" checked={data.pneusOk} onChange={v => set('pneusOk', v)} />
-            <Check id="freins" label="Freins corrects" checked={data.freinsOk} onChange={v => set('freinsOk', v)} />
-            <Check id="carrosserie" label="Carrosserie sans défaut" checked={data.carrosseriePropre} onChange={v => set('carrosseriePropre', v)} />
-            <Check id="garantie" label="Garantie constructeur restante" checked={data.garantieConstructeur} onChange={v => set('garantieConstructeur', v)} />
-            <Check id="ct" label="CT valide en Belgique" checked={data.ctValide} onChange={v => set('ctValide', v)} />
+            <Check id="entretien"  label="Entretien récent documenté"    checked={data.entretienRecent}    onChange={v => set('entretienRecent', v)} />
+            <Check id="pneus"      label="Pneus ≥ 50 %"                  checked={data.pneusOk}            onChange={v => set('pneusOk', v)} />
+            <Check id="freins"     label="Freins corrects"               checked={data.freinsOk}           onChange={v => set('freinsOk', v)} />
+            <Check id="carrosserie" label="Carrosserie sans défaut"      checked={data.carrosseriePropre}  onChange={v => set('carrosseriePropre', v)} />
+            <Check id="garantie"   label="Garantie constructeur restante" checked={data.garantieConstructeur} onChange={v => set('garantieConstructeur', v)} />
+            <Check id="ct"         label="CT valide en Belgique"         checked={data.ctValide}           onChange={v => set('ctValide', v)} />
           </div>
 
-          {!data.carrosseriePropre && (
-            <Field label="Devis carrosserie estimé (€)">
-              <Input type="number" min={0} placeholder="ex: 800" value={data.devisCarrosserie || ''} onChange={e => set('devisCarrosserie', parseFloat(e.target.value) || 0)} />
-            </Field>
-          )}
+          {/* Conditional devis fields */}
+          <div className="space-y-4">
+            {!data.entretienRecent && (
+              <Field label="Devis entretien estimé (€)">
+                <Input type="number" min={0} placeholder="ex: 300 — laisser vide pour défaut 250€" value={data.devisEntretien || ''} onChange={e => set('devisEntretien', parseFloat(e.target.value) || undefined as unknown as number)} />
+              </Field>
+            )}
+            {!data.pneusOk && (
+              <Field label="Devis pneus estimé (€)">
+                <Input type="number" min={0} placeholder="ex: 500 — laisser vide pour défaut 450€" value={data.devisPneus || ''} onChange={e => set('devisPneus', parseFloat(e.target.value) || undefined as unknown as number)} />
+              </Field>
+            )}
+            {!data.freinsOk && (
+              <Field label="Devis freins estimé (€)">
+                <Input type="number" min={0} placeholder="ex: 350 — laisser vide pour défaut 300€" value={data.devisFreins || ''} onChange={e => set('devisFreins', parseFloat(e.target.value) || undefined as unknown as number)} />
+              </Field>
+            )}
+            {!data.carrosseriePropre && (
+              <Field label="Devis carrosserie estimé (€)">
+                <Input type="number" min={0} placeholder="ex: 800" value={data.devisCarrosserie || ''} onChange={e => set('devisCarrosserie', parseFloat(e.target.value) || 0)} />
+              </Field>
+            )}
+          </div>
 
           <button
             onClick={handleAnalyze}
@@ -180,6 +256,18 @@ export default function CarmeloPage() {
 
             {!result.raisonRefus && (
               <>
+                {/* Alertes */}
+                {result.alertes.length > 0 && (
+                  <div className="space-y-2">
+                    {result.alertes.map((alerte, i) => (
+                      <div key={i} className="bg-yellow-950 border border-yellow-700 rounded-lg px-4 py-2 text-sm text-yellow-200">
+                        ⚠ {alerte}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Points forts / faibles */}
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <p className="text-xs text-zinc-500 uppercase mb-2">Points forts</p>
@@ -195,42 +283,102 @@ export default function CarmeloPage() {
                   </div>
                 </div>
 
+                {/* Risques mécaniques */}
                 <div>
                   <p className="text-xs text-zinc-500 uppercase mb-2">Risques mécaniques</p>
-                  <ul className="space-y-1 text-sm">
-                    {result.risquesMecaniques.map((r, i) => <li key={i} className="text-zinc-300">• {r}</li>)}
-                  </ul>
+                  <div className="space-y-3">
+                    {result.risquesMecaniques.map((r, i) => (
+                      <div key={i} className="bg-zinc-900 rounded-lg p-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-medium text-zinc-200">{r.moteur}</span>
+                          <span className={`text-xs font-bold ${RISQUE_STYLE[r.niveauRisque] ?? 'text-zinc-400'}`}>
+                            {RISQUE_LABEL[r.niveauRisque] ?? r.niveauRisque} · Fiabilité {r.fiabilite}/5
+                          </span>
+                        </div>
+                        <ul className="space-y-0.5">
+                          {r.defautsConnus.map((d, j) => (
+                            <li key={j} className="text-xs text-zinc-400">• {d}</li>
+                          ))}
+                        </ul>
+                        {r.coutRisqueMoyen > 0 && (
+                          <p className="text-xs text-zinc-500 mt-1">Coût risque estimé : {euro(r.coutRisqueMoyen)}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
+                {/* Comparaison VN */}
+                {result.comparaisonVN && (
+                  <div className={`rounded-lg p-4 border ${result.comparaisonVN.penalise ? 'bg-red-950 border-red-800' : 'bg-zinc-900 border-zinc-700'}`}>
+                    <p className="text-xs text-zinc-500 uppercase mb-1">Comparaison VN remisé</p>
+                    <p className="text-sm text-zinc-200">{result.comparaisonVN.explication}</p>
+                    <div className="flex gap-4 mt-2 text-xs text-zinc-400">
+                      <span>Prix VN réf. : {euro(result.comparaisonVN.prixVNReference)}</span>
+                      <span>Écart : {euro(result.comparaisonVN.ecartEuros)} ({result.comparaisonVN.ecartPct}%)</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Chiffres */}
                 <div>
                   <p className="text-xs text-zinc-500 uppercase mb-2">Chiffres</p>
                   <div className="space-y-0">
-                    <Row label="Prix marché estimé" value={euro(result.prixMarcheReel)} />
-                    <Row label="Prix de vente réaliste" value={euro(result.prixVenteRealiste)} />
-                    <Row label="CT + Car-Pass" value={result.fraisCT ? euro(result.fraisCT) : 'Inclus'} />
-                    <Row label="Préparation" value={euro(result.fraisPreparation)} />
-                    <Row label="Publicité" value={euro(result.fraisPublicite)} />
-                    {result.fraisEntretien > 0 && <Row label="Entretien" value={euro(result.fraisEntretien)} />}
-                    {result.fraisPneus > 0 && <Row label="Pneus" value={euro(result.fraisPneus)} />}
-                    {result.fraisTransport > 0 && <Row label="Transport" value={euro(result.fraisTransport)} />}
-                    {result.fraisGarantie > 0 && <Row label="Garantie" value={euro(result.fraisGarantie)} />}
-                    {result.fraisCarrosserie > 0 && <Row label="Carrosserie" value={euro(result.fraisCarrosserie)} />}
-                    <Row label="Total frais" value={euro(result.fraisTotal)} />
+                    <Row label="Prix marché estimé"       value={euro(result.prixMarcheReel)} />
+                    <Row label="Prix de vente réaliste"   value={euro(result.prixVenteRealiste)} />
+                    <Row label="CT + Car-Pass"            value={result.fraisDetail.ct ? euro(result.fraisDetail.ct) : 'Inclus'} />
+                    <Row label="Préparation"              value={euro(result.fraisDetail.preparation)} />
+                    <Row label="Publicité"                value={euro(result.fraisDetail.publicite)} />
+                    {result.fraisDetail.entretien > 0 && <Row label="Entretien"  value={euro(result.fraisDetail.entretien)} />}
+                    {result.fraisDetail.pneus     > 0 && <Row label="Pneus"      value={euro(result.fraisDetail.pneus)} />}
+                    {result.fraisDetail.freins    > 0 && <Row label="Freins"     value={euro(result.fraisDetail.freins)} />}
+                    {result.fraisDetail.transport > 0 && <Row label="Transport"  value={euro(result.fraisDetail.transport)} />}
+                    {result.fraisDetail.carrosserie > 0 && <Row label="Carrosserie" value={euro(result.fraisDetail.carrosserie)} />}
+                    <Row label="Total frais"              value={euro(result.fraisDetail.total)} />
                     <Row label="Coussin négociation (3%)" value={euro(result.coussinNegociation)} />
-                    <Row label="Marge cible" value={euro(result.margeCible)} />
-                    <Row label="PRIX MAXIMUM À REMETTRE" value={euro(result.prixMaximum)} highlight />
-                    <Row label="Marge estimée" value={`${euro(result.margeEstimee)} — zone ${result.zoneMarge}`} highlight />
+                    <Row label="Marge cible"              value={euro(result.margeCible)} />
+                    <Row label="Prix achat cible"         value={euro(result.prixAchatCible)} />
+                    <Row label="Prix achat probable"      value={euro(result.prixAchatProbable)} />
+                    <Row label="PRIX MAXIMUM ABSOLU"      value={euro(result.prixAchatMaximum)} highlight />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3 text-center">
+                {/* Scénarios de marge */}
+                <div>
+                  <p className="text-xs text-zinc-500 uppercase mb-2">Scénarios de marge — zone <span className={result.zoneMarge === 'verte' ? 'text-green-400' : result.zoneMarge === 'orange' ? 'text-yellow-400' : result.zoneMarge === 'exceptionnelle' ? 'text-orange-400' : 'text-red-400'}>{result.zoneMarge}</span></p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="bg-zinc-900 rounded-lg p-3 text-center">
+                      <p className="text-xs text-zinc-500 mb-1">Pessimiste</p>
+                      <p className={`text-lg font-bold ${result.marges.pessimiste >= 0 ? 'text-white' : 'text-red-400'}`}>{euro(result.marges.pessimiste)}</p>
+                      <p className="text-xs text-zinc-600">achat au prix demandé</p>
+                    </div>
+                    <div className="bg-zinc-900 rounded-lg p-3 text-center">
+                      <p className="text-xs text-zinc-500 mb-1">Réaliste</p>
+                      <p className={`text-lg font-bold ${result.marges.realiste >= result.margeCible ? 'text-green-400' : 'text-yellow-400'}`}>{euro(result.marges.realiste)}</p>
+                      <p className="text-xs text-zinc-600">achat probable</p>
+                    </div>
+                    <div className="bg-zinc-900 rounded-lg p-3 text-center">
+                      <p className="text-xs text-zinc-500 mb-1">Optimiste</p>
+                      <p className="text-lg font-bold text-green-400">{euro(result.marges.optimiste)}</p>
+                      <p className="text-xs text-zinc-600">achat cible</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Scores */}
+                <div className="grid grid-cols-4 gap-3 text-center">
                   <div className="bg-zinc-900 rounded-lg p-3">
-                    <p className="text-xs text-zinc-500">Score Rotation</p>
-                    <p className="text-2xl font-bold text-white">{result.scoreRotation}<span className="text-sm text-zinc-400">/10</span></p>
+                    <p className="text-xs text-zinc-500">Rotation</p>
+                    <p className="text-2xl font-bold text-white">{result.scoreRotation.valeur}<span className="text-sm text-zinc-400">/10</span></p>
+                    <p className="text-xs text-zinc-600 mt-0.5">{result.scoreRotation.categorie.replace('_', ' ')}</p>
                   </div>
                   <div className="bg-zinc-900 rounded-lg p-3">
                     <p className="text-xs text-zinc-500">Délai estimé</p>
-                    <p className="text-2xl font-bold text-white">{result.rotationJours}<span className="text-sm text-zinc-400">j</span></p>
+                    <p className="text-2xl font-bold text-white">{result.scoreRotation.delaiEstimeJours}<span className="text-sm text-zinc-400">j</span></p>
+                  </div>
+                  <div className="bg-zinc-900 rounded-lg p-3">
+                    <p className="text-xs text-zinc-500">Capital immo.</p>
+                    <p className={`text-2xl font-bold ${result.scoreCapitalImmobilise >= 7 ? 'text-red-400' : result.scoreCapitalImmobilise >= 5 ? 'text-yellow-400' : 'text-green-400'}`}>{result.scoreCapitalImmobilise}<span className="text-sm text-zinc-400">/10</span></p>
                   </div>
                   <div className="bg-zinc-900 rounded-lg p-3">
                     <p className="text-xs text-zinc-500">Confiance</p>
@@ -238,9 +386,16 @@ export default function CarmeloPage() {
                   </div>
                 </div>
 
+                {/* Conclusion */}
                 <div className="bg-zinc-900 rounded-lg p-4">
                   <p className="text-xs text-zinc-500 uppercase mb-1">Conclusion Carmelo</p>
                   <p className="text-sm text-zinc-200 leading-relaxed">{result.conclusion}</p>
+                </div>
+
+                {/* Action recommandée */}
+                <div className={`rounded-lg p-4 border-2 ${result.decision === 'VERT' ? 'bg-green-950 border-green-600' : result.decision === 'ORANGE' ? 'bg-yellow-950 border-yellow-600' : 'bg-red-950 border-red-600'}`}>
+                  <p className="text-xs text-zinc-400 uppercase mb-1 font-semibold">Action recommandée</p>
+                  <p className={`text-sm font-medium leading-relaxed ${v.text}`}>{result.actionRecommandee}</p>
                 </div>
 
                 <p className="text-xs text-zinc-600">
