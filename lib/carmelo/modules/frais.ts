@@ -28,12 +28,12 @@ export function calculerFrais(data: VehicleData): FraisDetail {
 
   let pneus = 0;
   if (!data.pneusOk) {
-    pneus = data.devisPneus !== undefined ? data.devisPneus : 450;
+    pneus = data.devisPneus !== undefined ? data.devisPneus : 500;
   }
 
   let freins = 0;
   if (!data.freinsOk) {
-    freins = data.devisFreins !== undefined ? data.devisFreins : 300;
+    freins = data.devisFreins !== undefined ? data.devisFreins : 350;
   }
 
   let carrosserie = 0;
@@ -43,7 +43,13 @@ export function calculerFrais(data: VehicleData): FraisDetail {
 
   const transport = calculerTransport(data.distanceKm, data.paysOrigine);
 
-  const total = ct + preparation + publicite + entretien + pneus + freins + carrosserie + transport;
+  // Garantie vendue : si hors garantie constructeur et km > 40 000, prévoir coût garantie revendue
+  let garantieVendue: number | undefined;
+  if (!data.garantieConstructeur && data.kilometrage > 40000) {
+    garantieVendue = 300;
+  }
 
-  return { ct, preparation, publicite, entretien, pneus, freins, carrosserie, transport, total };
+  const total = ct + preparation + publicite + entretien + pneus + freins + carrosserie + transport + (garantieVendue ?? 0);
+
+  return { ct, preparation, publicite, entretien, pneus, freins, carrosserie, transport, garantieVendue, total };
 }

@@ -17,11 +17,52 @@ function isPureTech(data: VehicleData): boolean {
   return false;
 }
 
+const RENAULT_TCE_KEYWORDS = ['1.2 tce', 'tce 115', 'tce 120', 'tce 130'];
+const RENAULT_TCE_MARQUES = ['renault', 'nissan', 'dacia'];
+
+function isRenaultTCe(data: VehicleData): boolean {
+  const mot = data.motorisation.toLowerCase();
+  const marque = data.marque.toLowerCase();
+  const code = (data.codeMoteur ?? '').toLowerCase();
+
+  const keywordMatch = RENAULT_TCE_KEYWORDS.some(k => mot.includes(k) || code.includes(k));
+  if (!keywordMatch) return false;
+
+  return RENAULT_TCE_MARQUES.some(m => marque.includes(m));
+}
+
+const FORD_ECOBOOST_KEYWORDS = ['1.0 ecoboost', 'ecoboost 100', 'ecoboost 125', 'ecoboost 140'];
+
+function isFordEcoBoostWetBelt(data: VehicleData): boolean {
+  const mot = data.motorisation.toLowerCase();
+  const marque = data.marque.toLowerCase();
+  const code = (data.codeMoteur ?? '').toLowerCase();
+
+  if (!marque.includes('ford')) return false;
+
+  const keywordMatch = FORD_ECOBOOST_KEYWORDS.some(k => mot.includes(k) || code.includes(k));
+  return keywordMatch;
+}
+
 export function verifierExclusions(data: VehicleData): { exclu: boolean; raison?: string } {
   if (isPureTech(data)) {
     return {
       exclu: true,
       raison: 'Moteur PSA PureTech — exclusion absolue GP-CARS. Fiabilite insuffisante.',
+    };
+  }
+
+  if (isRenaultTCe(data)) {
+    return {
+      exclu: true,
+      raison: 'Moteur Renault 1.2 TCe — exclusion absolue GP-CARS. Chaine distribution dans huile, casse frequente, cout reparation 3000-5000€.',
+    };
+  }
+
+  if (isFordEcoBoostWetBelt(data)) {
+    return {
+      exclu: true,
+      raison: 'Moteur Ford 1.0 EcoBoost (courroie humide) — exclusion absolue GP-CARS. Courroie distribution dans huile, casse = moteur HS.',
     };
   }
 

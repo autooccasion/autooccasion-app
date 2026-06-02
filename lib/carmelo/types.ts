@@ -1,4 +1,4 @@
-export type DecisionVehicule = 'VERT' | 'ORANGE' | 'ROUGE';
+export type DecisionVehicule = 'VERT' | 'OR' | 'ORANGE' | 'ROUGE';
 export type ZoneMarge = 'verte' | 'orange' | 'exceptionnelle' | 'rouge';
 export type NiveauRisque = 'blacklist' | 'eleve' | 'modere' | 'faible' | 'excellent';
 export type TypeRotation = 'tres_rapide' | 'rapide' | 'moyenne' | 'lente';
@@ -49,7 +49,19 @@ export interface FraisDetail {
   freins: number;
   carrosserie: number;
   transport: number;
+  garantieVendue?: number;
   total: number;
+}
+
+export interface ScoreCarmelo {
+  rentabilite: number;          // /100
+  rotation: number;             // /100
+  fiabilite: number;            // /100
+  popularite: number;           // /100
+  immobilisation: number;       // /100 (inverted — 100 = low risk)
+  historiqueEntretien: number;  // /100
+  risqueMecanique: number;      // /100 (inverted — 100 = safe)
+  scoreTotal: number;           // /100 weighted average
 }
 
 export interface ScenariosMarge {
@@ -114,6 +126,7 @@ export interface CarmeloResult {
   scoreRotation: ScoreRotation;
   scoreCapitalImmobilise: number;   // 1-10, 10 = most risky
   scoreRisqueMecanique: number;     // 1-10, 10 = most risky
+  scoreCarmelo: ScoreCarmelo;
 
   // VN
   comparaisonVN?: ComparaisonVN;
