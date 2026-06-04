@@ -1,8 +1,11 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { pgTable, serial, varchar } from 'drizzle-orm/pg-core';
-import { eq } from 'drizzle-orm';
+import { pgTable, serial, varchar, text, timestamp } from 'drizzle-orm/pg-core';
+import { eq, desc } from 'drizzle-orm';
 import postgres from 'postgres';
 import { genSaltSync, hashSync } from 'bcrypt-ts';
+import { extractDecision } from '@/lib/carmelo/decision';
+
+export { extractDecision };
 
 // Optionally, if not using email/pass login, you can
 // use the Drizzle adapter for Auth.js / NextAuth
@@ -44,6 +47,73 @@ async function ensureTableExists() {
     id: serial('id').primaryKey(),
     email: varchar('email', { length: 64 }),
     password: varchar('password', { length: 64 }),
+  });
+
+  return table;
+}
+
+// --- Carmelo analysis history ---
+
+export type CarmeloAnalysisRecord = {
+  id: number;
+  email: string | null;
+  vehicule: string | null;
+  analyse: string | null;
+  decision: string | null;
+  createdAt: Date | null;
+};
+
+export async function saveAnalysis(
+  email: string,
+  vehicule: string,
+  analyse: string,
+) {
+  const analyses = await ensureAnalysisTableExists();
+  return await db.insert(analyses).values({
+    email,
+    vehicule,
+    analyse,
+    decision: extractDecision(analyse),
+  });
+}
+
+export async function getAnalyses(email: string, limit = 50) {
+  const analyses = await ensureAnalysisTableExists();
+  return await db
+    .select()
+    .from(analyses)
+    .where(eq(analyses.email, email))
+    .orderBy(desc(analyses.createdAt))
+    .limit(limit);
+}
+
+async function ensureAnalysisTableExists() {
+  const result = await client`
+    SELECT EXISTS (
+      SELECT FROM information_schema.tables
+      WHERE table_schema = 'public'
+      AND table_name = 'CarmeloAnalysis'
+    );`;
+
+  if (!result[0].exists) {
+    await client`
+      CREATE TABLE "CarmeloAnalysis" (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(64),
+        vehicule TEXT,
+        analyse TEXT,
+        decision VARCHAR(16),
+        created_at TIMESTAMP DEFAULT NOW()
+      );`;
+  }
+
+  const table = pgTable('CarmeloAnalysis', {
+    id: serial('id').primaryKey(),
+    email: varchar('email', { length: 64 }),
+    vehicule: text('vehicule'),
+    analyse: text('analyse'),
+    decision: varchar('decision', { length: 16 }),
+    createdAt: timestamp('created_at'),
   });
 
   return table;

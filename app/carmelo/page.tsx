@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import CarmeloNav from './nav';
 
 export default function CarmeloPage() {
   const [input, setInput] = useState('');
@@ -21,12 +22,27 @@ export default function CarmeloPage() {
         body: JSON.stringify({ vehicule: input }),
       });
 
-      const data = await res.json();
-
-      if (!res.ok) {
+      // Errors are returned as JSON; a successful analysis is streamed as text.
+      const contentType = res.headers.get('Content-Type') || '';
+      if (!res.ok || contentType.includes('application/json')) {
+        const data = await res.json().catch(() => ({}));
         setError(data.error || 'Erreur serveur.');
-      } else {
-        setResult(data.analyse);
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        setError('Flux indisponible.');
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let acc = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        acc += decoder.decode(value, { stream: true });
+        setResult(acc);
       }
     } catch {
       setError('Erreur réseau. Vérifiez la connexion.');
@@ -45,6 +61,8 @@ export default function CarmeloPage() {
             Directeur des Achats · Analyste Marché
           </p>
         </div>
+
+        <CarmeloNav active="analyser" />
 
         <div className="space-y-2">
           <label className="text-sm text-zinc-400">

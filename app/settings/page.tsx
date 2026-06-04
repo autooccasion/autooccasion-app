@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { auth } from 'app/auth';
 import { redirect } from 'next/navigation';
 import { saveApiKey } from 'app/actions';
+import CarmeloNav from '../carmelo/nav';
 
 export default async function SettingsPage() {
   const session = await auth();
@@ -17,6 +18,8 @@ export default async function SettingsPage() {
           <h1 className="text-2xl font-bold">Paramètres GP-CARS</h1>
           <p className="text-zinc-400 text-sm mt-1">Configuration de Carmelo</p>
         </div>
+
+        <CarmeloNav active="parametres" />
 
         <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 space-y-4">
           <div className="flex items-center justify-between">
@@ -61,13 +64,6 @@ export default async function SettingsPage() {
             </button>
           </form>
         </div>
-
-        <a
-          href="/carmelo"
-          className="block text-center text-zinc-400 underline text-sm hover:text-zinc-200"
-        >
-          &#8592; Retour à Carmelo
-        </a>
 
       </div>
     </div>
