@@ -15,19 +15,16 @@ export default async function ProtectedPage() {
         </div>
 
         <Link
-          href="/carmelo"
+          href="/gp/stock"
           className="block w-full px-6 py-3 bg-white text-black text-sm font-semibold rounded-lg hover:bg-zinc-200 transition-colors"
         >
-          Ouvrir Carmelo — Agent d&apos;achat IA
+          Stock GP-CARS — Source de vérité
         </Link>
 
-        <div className="flex justify-center gap-4 text-sm">
-          <Link href="/carmelo/history" className="text-zinc-400 underline hover:text-zinc-200">
-            Historique
-          </Link>
-          <Link href="/settings" className="text-zinc-400 underline hover:text-zinc-200">
-            Paramètres
-          </Link>
+        <div className="flex justify-center gap-4 text-sm flex-wrap">
+          <Link href="/carmelo" className="text-zinc-400 underline hover:text-zinc-200">Agent Achats (Carmelo)</Link>
+          <Link href="/gp/dashboard" className="text-zinc-400 underline hover:text-zinc-200">Dashboard</Link>
+          <Link href="/settings" className="text-zinc-400 underline hover:text-zinc-200">Paramètres</Link>
         </div>
 
         <SignOut />

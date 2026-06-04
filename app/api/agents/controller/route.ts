@@ -1,0 +1,96 @@
+import { NextRequest, NextResponse } from 'next/server';
+import Anthropic from '@anthropic-ai/sdk';
+import { auth } from 'app/auth';
+import { cookies } from 'next/headers';
+import { getVehicle, saveControllerResult } from 'app/db';
+import { buildControllerSystemPrompt, runHardRules } from '@/lib/agents/controller/system-prompt';
+import type { VehicleSummary } from '@/lib/agents/shared-types';
+
+export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.email) return NextResponse.json({ error: 'Non autorisé.' }, { status: 401 });
+  const email = session.user.email;
+
+  const apiKey = process.env.ANTHROPIC_API_KEY || cookies().get('gp_api_key')?.value;
+  if (!apiKey) return NextResponse.json({ error: 'Clé API non configurée.' }, { status: 500 });
+
+  const body = await req.json().catch(() => null);
+  const vehicleId = Number(body?.vehicleId);
+  if (!Number.isFinite(vehicleId)) {
+    return NextResponse.json({ error: 'vehicleId invalide.' }, { status: 400 });
+  }
+
+  const row = await getVehicle(vehicleId, email);
+  if (!row) return NextResponse.json({ error: 'Véhicule introuvable.' }, { status: 404 });
+
+  const summary: VehicleSummary = {
+    id: row.id,
+    make: row.make ?? null,
+    model: row.model ?? null,
+    year: row.year ?? null,
+    km: row.km ?? null,
+    fuel: row.fuel ?? null,
+    status: (row.status ?? 'analyse') as VehicleSummary['status'],
+    askingPrice: row.askingPrice ?? null,
+    maxBuyPrice: row.maxBuyPrice ?? null,
+    realBuyPrice: row.realBuyPrice ?? null,
+    realSellPrice: row.realSellPrice ?? null,
+    decision: (row.decision ?? 'INCONNU') as VehicleSummary['decision'],
+    soldInDays: row.soldInDays ?? null,
+    realMargin: row.realMargin ?? null,
+  };
+
+  // 1. Hard rules — synchronous, no LLM needed.
+  const hardFlags = runHardRules(summary);
+  const hasBlocker = hardFlags.some((f) => f.severity === 'bloquant');
+
+  // If all hard checks pass, ask the LLM for nuanced analysis.
+  let llmFlags: { code: string; severity: string; message: string }[] = [];
+  let llmSummary = '';
+  let requiresHuman = (row.confidence ?? 100) < 85;
+
+  if (!hasBlocker) {
+    const client = new Anthropic({ apiKey });
+    const userMessage = JSON.stringify({
+      vehicule: `${row.make || ''} ${row.model || ''} ${row.year || ''}`.trim(),
+      km: row.km,
+      askingPrice: row.askingPrice,
+      maxBuyPrice: row.maxBuyPrice,
+      realBuyPrice: row.realBuyPrice,
+      marketPrice: row.marketPrice,
+      estimatedMargin: row.estimatedMargin,
+      confidence: row.confidence,
+      decision: row.decision,
+      listingTitle: row.listingTitle,
+      listingDescription: row.listingDescription?.slice(0, 200),
+    });
+
+    try {
+      const response = await client.messages.create({
+        model: 'claude-opus-4-8',
+        max_tokens: 512,
+        system: buildControllerSystemPrompt(),
+        messages: [{ role: 'user', content: userMessage }],
+      });
+      const text = response.content[0]?.type === 'text' ? response.content[0].text : '{}';
+      const parsed = JSON.parse(text);
+      llmFlags = parsed.flags || [];
+      llmSummary = parsed.summary || '';
+      requiresHuman = requiresHuman || parsed.requires_human_validation === true;
+    } catch (err) {
+      console.error('Agent contrôleur: erreur LLM', err);
+    }
+  }
+
+  const allFlags = [...hardFlags, ...llmFlags];
+  const validated = !allFlags.some((f) => f.severity === 'bloquant');
+
+  await saveControllerResult(vehicleId, email, {
+    validated,
+    requiresHuman,
+    flags: allFlags as any,
+    notes: llmSummary,
+  });
+
+  return NextResponse.json({ validated, requiresHuman, flags: allFlags, summary: llmSummary });
+}

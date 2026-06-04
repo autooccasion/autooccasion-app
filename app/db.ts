@@ -1,12 +1,14 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { pgTable, serial, varchar, text, timestamp, integer } from 'drizzle-orm/pg-core';
-import { eq, desc, and } from 'drizzle-orm';
+import { pgTable, serial, varchar, text, timestamp, integer, boolean, json } from 'drizzle-orm/pg-core';
+import { eq, desc, and, gte, isNotNull } from 'drizzle-orm';
 import postgres from 'postgres';
 import { genSaltSync, hashSync } from 'bcrypt-ts';
 import { extractDecision } from '@/lib/carmelo/decision';
 import { parseReport } from '@/lib/carmelo/parse';
+import type { VehicleStatus, AgentDecision, ControllerFlag, VehicleSummary } from '@/lib/agents/shared-types';
 
 export { extractDecision };
+export type { VehicleStatus, AgentDecision, VehicleSummary };
 
 // Optionally, if not using email/pass login, you can
 // use the Drizzle adapter for Auth.js / NextAuth
@@ -292,4 +294,288 @@ async function ensureOpportunityTableExists() {
       created_at TIMESTAMP DEFAULT NOW()
     );`;
   opportunityTableReady = true;
+}
+
+// ============================================================
+// VEHICLE — central source of truth shared by all three agents
+// ============================================================
+
+const vehicle = pgTable('Vehicle', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 64 }),
+
+  // --- Identification ---
+  make: varchar('make', { length: 48 }),
+  model: varchar('model', { length: 64 }),
+  year: integer('year'),
+  km: integer('km'),
+  fuel: varchar('fuel', { length: 32 }),
+  gearbox: varchar('gearbox', { length: 32 }),
+  color: varchar('color', { length: 32 }),
+  power: varchar('power', { length: 32 }),
+  vin: varchar('vin', { length: 20 }),
+  listingUrl: text('listing_url'),
+
+  // --- Lifecycle ---
+  status: varchar('status', { length: 16 }).$type<VehicleStatus>(),
+
+  // --- Agent Achats ---
+  askingPrice: integer('asking_price'),
+  marketPrice: integer('market_price'),
+  maxBuyPrice: integer('max_buy_price'),
+  estimatedMargin: integer('estimated_margin'),
+  rotationScore: integer('rotation_score'),
+  confidence: integer('confidence'),
+  decision: varchar('decision', { length: 16 }).$type<AgentDecision>(),
+  analysisReport: text('analysis_report'),
+  analysisId: integer('analysis_id'),   // FK → CarmeloAnalysis.id
+
+  // --- Purchase reality ---
+  realBuyPrice: integer('real_buy_price'),
+  boughtAt: timestamp('bought_at'),
+
+  // --- Agent Marketing ---
+  listingTitle: text('listing_title'),
+  listingDescription: text('listing_description'),
+  listingPoints: json('listing_points').$type<string[]>(),
+  listingTags: json('listing_tags').$type<string[]>(),
+  publishedAt: timestamp('published_at'),
+  listingExpiresAt: timestamp('listing_expires_at'),
+  publishedPlatforms: json('published_platforms').$type<string[]>(),
+
+  // --- Sale reality ---
+  realSellPrice: integer('real_sell_price'),
+  soldAt: timestamp('sold_at'),
+  soldInDays: integer('sold_in_days'),
+  realMargin: integer('real_margin'),
+
+  // --- Agent Contrôleur ---
+  controllerValidated: boolean('controller_validated'),
+  requiresHumanValidation: boolean('requires_human_validation'),
+  controllerFlags: json('controller_flags').$type<ControllerFlag[]>(),
+  controllerNotes: text('controller_notes'),
+
+  createdAt: timestamp('created_at'),
+  updatedAt: timestamp('updated_at'),
+});
+
+export type VehicleRecord = typeof vehicle.$inferSelect;
+
+export type NewVehicleData = {
+  make?: string | null;
+  model?: string | null;
+  year?: number | null;
+  km?: number | null;
+  fuel?: string | null;
+  gearbox?: string | null;
+  color?: string | null;
+  power?: string | null;
+  vin?: string | null;
+  listingUrl?: string | null;
+  askingPrice?: number | null;
+  marketPrice?: number | null;
+  maxBuyPrice?: number | null;
+  estimatedMargin?: number | null;
+  rotationScore?: number | null;
+  confidence?: number | null;
+  decision?: AgentDecision | null;
+  analysisReport?: string | null;
+  analysisId?: number | null;
+};
+
+export async function createVehicle(email: string, data: NewVehicleData): Promise<VehicleRecord[]> {
+  await ensureVehicleTableExists();
+  return await db.insert(vehicle).values({
+    email,
+    status: 'analyse',
+    make: data.make ?? null,
+    model: data.model ?? null,
+    year: data.year ?? null,
+    km: data.km ?? null,
+    fuel: data.fuel ?? null,
+    gearbox: data.gearbox ?? null,
+    color: data.color ?? null,
+    power: data.power ?? null,
+    vin: data.vin ?? null,
+    listingUrl: data.listingUrl ?? null,
+    askingPrice: data.askingPrice ?? null,
+    marketPrice: data.marketPrice ?? null,
+    maxBuyPrice: data.maxBuyPrice ?? null,
+    estimatedMargin: data.estimatedMargin ?? null,
+    rotationScore: data.rotationScore ?? null,
+    confidence: data.confidence ?? null,
+    decision: data.decision ?? 'INCONNU',
+    analysisReport: data.analysisReport ?? null,
+    analysisId: data.analysisId ?? null,
+    controllerValidated: false,
+    requiresHumanValidation: (data.confidence ?? 100) < 85,
+  }).returning();
+}
+
+export async function getVehicles(email: string, limit = 100): Promise<VehicleRecord[]> {
+  await ensureVehicleTableExists();
+  return await db
+    .select()
+    .from(vehicle)
+    .where(eq(vehicle.email, email))
+    .orderBy(desc(vehicle.createdAt))
+    .limit(limit);
+}
+
+export async function getVehicle(id: number, email: string): Promise<VehicleRecord | null> {
+  await ensureVehicleTableExists();
+  const rows = await db
+    .select()
+    .from(vehicle)
+    .where(and(eq(vehicle.id, id), eq(vehicle.email, email)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateVehicleStatus(
+  id: number,
+  email: string,
+  status: VehicleStatus,
+  extra?: Partial<typeof vehicle.$inferInsert>,
+) {
+  await ensureVehicleTableExists();
+  return await db
+    .update(vehicle)
+    .set({ status, updatedAt: new Date(), ...extra })
+    .where(and(eq(vehicle.id, id), eq(vehicle.email, email)));
+}
+
+export async function saveMarketingDraft(
+  id: number,
+  email: string,
+  draft: { title: string; description: string; points: string[]; tags: string[] },
+) {
+  await ensureVehicleTableExists();
+  return await db
+    .update(vehicle)
+    .set({
+      listingTitle: draft.title,
+      listingDescription: draft.description,
+      listingPoints: draft.points,
+      listingTags: draft.tags,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(vehicle.id, id), eq(vehicle.email, email)));
+}
+
+export async function recordSale(
+  id: number,
+  email: string,
+  realSellPrice: number,
+  soldAt: Date,
+) {
+  await ensureVehicleTableExists();
+  const row = await getVehicle(id, email);
+  if (!row) return;
+
+  const start = row.boughtAt || row.publishedAt || row.createdAt;
+  const soldInDays = start
+    ? Math.max(0, Math.round((soldAt.getTime() - new Date(start).getTime()) / 86_400_000))
+    : null;
+  const realMargin =
+    row.realBuyPrice != null
+      ? realSellPrice - row.realBuyPrice - 1005 // plancher frais approx
+      : null;
+
+  return await db
+    .update(vehicle)
+    .set({ status: 'vendu', realSellPrice, soldAt, soldInDays, realMargin, updatedAt: new Date() })
+    .where(and(eq(vehicle.id, id), eq(vehicle.email, email)));
+}
+
+export async function saveControllerResult(
+  id: number,
+  email: string,
+  result: { validated: boolean; requiresHuman: boolean; flags: ControllerFlag[]; notes: string },
+) {
+  await ensureVehicleTableExists();
+  return await db
+    .update(vehicle)
+    .set({
+      controllerValidated: result.validated,
+      requiresHumanValidation: result.requiresHuman,
+      controllerFlags: result.flags,
+      controllerNotes: result.notes,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(vehicle.id, id), eq(vehicle.email, email)));
+}
+
+// Returns a lightweight summary array for analytics.
+export async function getVehicleSummaries(email: string): Promise<VehicleSummary[]> {
+  await ensureVehicleTableExists();
+  const rows = await db
+    .select({
+      id: vehicle.id,
+      make: vehicle.make,
+      model: vehicle.model,
+      year: vehicle.year,
+      km: vehicle.km,
+      fuel: vehicle.fuel,
+      status: vehicle.status,
+      askingPrice: vehicle.askingPrice,
+      maxBuyPrice: vehicle.maxBuyPrice,
+      realBuyPrice: vehicle.realBuyPrice,
+      realSellPrice: vehicle.realSellPrice,
+      decision: vehicle.decision,
+      soldInDays: vehicle.soldInDays,
+      realMargin: vehicle.realMargin,
+    })
+    .from(vehicle)
+    .where(eq(vehicle.email, email))
+    .orderBy(desc(vehicle.createdAt));
+
+  return rows.map((r) => ({
+    id: r.id,
+    make: r.make ?? null,
+    model: r.model ?? null,
+    year: r.year ?? null,
+    km: r.km ?? null,
+    fuel: r.fuel ?? null,
+    status: (r.status ?? 'analyse') as VehicleStatus,
+    askingPrice: r.askingPrice ?? null,
+    maxBuyPrice: r.maxBuyPrice ?? null,
+    realBuyPrice: r.realBuyPrice ?? null,
+    realSellPrice: r.realSellPrice ?? null,
+    decision: (r.decision ?? 'INCONNU') as AgentDecision,
+    soldInDays: r.soldInDays ?? null,
+    realMargin: r.realMargin ?? null,
+  }));
+}
+
+let vehicleTableReady = false;
+
+async function ensureVehicleTableExists() {
+  if (vehicleTableReady) return;
+  await client`
+    CREATE TABLE IF NOT EXISTS "Vehicle" (
+      id SERIAL PRIMARY KEY,
+      email VARCHAR(64),
+      make VARCHAR(48), model VARCHAR(64), year INTEGER, km INTEGER,
+      fuel VARCHAR(32), gearbox VARCHAR(32), color VARCHAR(32), power VARCHAR(32),
+      vin VARCHAR(20), listing_url TEXT,
+      status VARCHAR(16) DEFAULT 'analyse',
+      asking_price INTEGER, market_price INTEGER, max_buy_price INTEGER,
+      estimated_margin INTEGER, rotation_score INTEGER, confidence INTEGER,
+      decision VARCHAR(16) DEFAULT 'INCONNU',
+      analysis_report TEXT, analysis_id INTEGER,
+      real_buy_price INTEGER, bought_at TIMESTAMP,
+      listing_title TEXT, listing_description TEXT,
+      listing_points JSONB, listing_tags JSONB,
+      published_at TIMESTAMP, listing_expires_at TIMESTAMP,
+      published_platforms JSONB,
+      real_sell_price INTEGER, sold_at TIMESTAMP,
+      sold_in_days INTEGER, real_margin INTEGER,
+      controller_validated BOOLEAN DEFAULT FALSE,
+      requires_human_validation BOOLEAN DEFAULT FALSE,
+      controller_flags JSONB, controller_notes TEXT,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    );`;
+  vehicleTableReady = true;
 }

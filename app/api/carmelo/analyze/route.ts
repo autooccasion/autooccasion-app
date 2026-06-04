@@ -3,9 +3,10 @@ import Anthropic from '@anthropic-ai/sdk';
 import { buildCarmeloSystemPrompt } from '@/lib/carmelo/system-prompt';
 import { fetchListing } from '@/lib/carmelo/fetch-listing';
 import { selectRelevant, buildMemoryBlock } from '@/lib/carmelo/memory';
+import { parseReport } from '@/lib/carmelo/parse';
 import { auth } from 'app/auth';
 import { cookies } from 'next/headers';
-import { saveAnalysis, getAnalyses } from 'app/db';
+import { saveAnalysis, getAnalyses, createVehicle } from 'app/db';
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -105,9 +106,27 @@ export async function POST(req: NextRequest) {
         // Persist the completed analysis (best-effort — never break the stream).
         if (full.trim().length > 0) {
           try {
-            await saveAnalysis(email, vehicule, full, url || null);
+            const analysisRows = await saveAnalysis(email, vehicule, full, url || null);
+            const analysisId = (analysisRows as any)?.[0]?.id ?? null;
+
+            // Also create (or update) the central Vehicle record so all agents
+            // share the same source of truth from the first analysis.
+            const parsed = parseReport(full);
+            await createVehicle(email, {
+              make: parsed.make,
+              listingUrl: url || null,
+              askingPrice: null,
+              marketPrice: parsed.marketPrice,
+              maxBuyPrice: parsed.recommendedMaxBuy,
+              estimatedMargin: parsed.estimatedMargin,
+              rotationScore: parsed.rotationScore,
+              confidence: parsed.confidence,
+              decision: parsed.decision,
+              analysisReport: full,
+              analysisId,
+            });
           } catch (err) {
-            console.error('Carmelo: échec sauvegarde historique', err);
+            console.error('Carmelo: échec sauvegarde', err);
           }
         }
 
