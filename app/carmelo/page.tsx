@@ -5,12 +5,13 @@ import CarmeloNav from './nav';
 
 export default function CarmeloPage() {
   const [input, setInput] = useState('');
+  const [url, setUrl] = useState('');
   const [result, setResult] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   async function handleAnalyze() {
-    if (!input.trim()) return;
+    if (!input.trim() && !url.trim()) return;
     setLoading(true);
     setResult('');
     setError('');
@@ -19,7 +20,7 @@ export default function CarmeloPage() {
       const res = await fetch('/api/carmelo/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vehicule: input }),
+        body: JSON.stringify({ vehicule: input, url }),
       });
 
       // Errors are returned as JSON; a successful analysis is streamed as text.
@@ -66,7 +67,25 @@ export default function CarmeloPage() {
 
         <div className="space-y-2">
           <label className="text-sm text-zinc-400">
-            Décrivez le véhicule (annonce, e-mail, descriptif texte)
+            Lien de l&apos;annonce (AutoScout24, Gocar, 2dehands…)
+          </label>
+          <input
+            type="url"
+            inputMode="url"
+            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+            placeholder="https://www.autoscout24.be/offres/..."
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+          />
+          <p className="text-xs text-zinc-600">
+            Carmelo lit l&apos;annonce pour vérifier les critères. Certaines plateformes
+            bloquent la lecture automatique — dans ce cas, collez aussi le texte ci-dessous.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm text-zinc-400">
+            Description du véhicule (optionnelle si le lien est lisible)
           </label>
           <textarea
             className="w-full h-48 bg-zinc-900 border border-zinc-700 rounded-lg p-4 text-sm text-zinc-100 placeholder-zinc-600 resize-none focus:outline-none focus:ring-1 focus:ring-zinc-500"
@@ -78,7 +97,7 @@ export default function CarmeloPage() {
 
         <button
           onClick={handleAnalyze}
-          disabled={loading || !input.trim()}
+          disabled={loading || (!input.trim() && !url.trim())}
           className="px-6 py-2.5 bg-white text-black text-sm font-semibold rounded-lg hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {loading ? 'Analyse en cours...' : 'Analyser'}

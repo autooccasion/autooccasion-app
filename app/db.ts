@@ -1,9 +1,10 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { pgTable, serial, varchar, text, timestamp } from 'drizzle-orm/pg-core';
-import { eq, desc } from 'drizzle-orm';
+import { pgTable, serial, varchar, text, timestamp, integer } from 'drizzle-orm/pg-core';
+import { eq, desc, and } from 'drizzle-orm';
 import postgres from 'postgres';
 import { genSaltSync, hashSync } from 'bcrypt-ts';
 import { extractDecision } from '@/lib/carmelo/decision';
+import { parseReport } from '@/lib/carmelo/parse';
 
 export { extractDecision };
 
@@ -52,69 +53,147 @@ async function ensureTableExists() {
   return table;
 }
 
-// --- Carmelo analysis history ---
+// --- Carmelo analysis history & learning memory ---
 
-export type CarmeloAnalysisRecord = {
-  id: number;
-  email: string | null;
-  vehicule: string | null;
-  analyse: string | null;
-  decision: string | null;
-  createdAt: Date | null;
-};
+// Lifecycle of a vehicle through GP-CARS.
+export type VehicleStatus = 'analyse' | 'achete' | 'vendu' | 'refuse';
+
+const carmeloAnalysis = pgTable('CarmeloAnalysis', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 64 }),
+  vehicule: text('vehicule'),
+  url: text('url'),
+  analyse: text('analyse'),
+  decision: varchar('decision', { length: 16 }),
+  // Structured fields parsed from Carmelo's report (the "memory").
+  vehiculeResume: text('vehicule_resume'),
+  make: varchar('make', { length: 48 }),
+  marketPrice: integer('market_price'),
+  recommendedMaxBuy: integer('recommended_max_buy'),
+  estimatedMargin: integer('estimated_margin'),
+  rotationScore: integer('rotation_score'),
+  confidence: integer('confidence'),
+  // Real-world outcome (the learning signal), filled in by the team.
+  status: varchar('status', { length: 16 }),
+  realBuyPrice: integer('real_buy_price'),
+  realSellPrice: integer('real_sell_price'),
+  soldInDays: integer('sold_in_days'),
+  boughtAt: timestamp('bought_at'),
+  soldAt: timestamp('sold_at'),
+  createdAt: timestamp('created_at'),
+});
+
+export type CarmeloAnalysisRecord = typeof carmeloAnalysis.$inferSelect;
 
 export async function saveAnalysis(
   email: string,
   vehicule: string,
   analyse: string,
+  url?: string | null,
 ) {
-  const analyses = await ensureAnalysisTableExists();
-  return await db.insert(analyses).values({
+  await ensureAnalysisTableExists();
+  const parsed = parseReport(analyse);
+  return await db.insert(carmeloAnalysis).values({
     email,
     vehicule,
+    url: url || null,
     analyse,
-    decision: extractDecision(analyse),
+    decision: parsed.decision,
+    vehiculeResume: parsed.vehiculeResume,
+    make: parsed.make,
+    marketPrice: parsed.marketPrice,
+    recommendedMaxBuy: parsed.recommendedMaxBuy,
+    estimatedMargin: parsed.estimatedMargin,
+    rotationScore: parsed.rotationScore,
+    confidence: parsed.confidence,
+    status: 'analyse',
   });
 }
 
 export async function getAnalyses(email: string, limit = 50) {
-  const analyses = await ensureAnalysisTableExists();
+  await ensureAnalysisTableExists();
   return await db
     .select()
-    .from(analyses)
-    .where(eq(analyses.email, email))
-    .orderBy(desc(analyses.createdAt))
+    .from(carmeloAnalysis)
+    .where(eq(carmeloAnalysis.email, email))
+    .orderBy(desc(carmeloAnalysis.createdAt))
     .limit(limit);
 }
 
-async function ensureAnalysisTableExists() {
-  const result = await client`
-    SELECT EXISTS (
-      SELECT FROM information_schema.tables
-      WHERE table_schema = 'public'
-      AND table_name = 'CarmeloAnalysis'
-    );`;
+export type OutcomeUpdate = {
+  status: VehicleStatus;
+  realBuyPrice?: number | null;
+  realSellPrice?: number | null;
+  boughtAt?: Date | null;
+  soldAt?: Date | null;
+};
 
-  if (!result[0].exists) {
-    await client`
-      CREATE TABLE "CarmeloAnalysis" (
-        id SERIAL PRIMARY KEY,
-        email VARCHAR(64),
-        vehicule TEXT,
-        analyse TEXT,
-        decision VARCHAR(16),
-        created_at TIMESTAMP DEFAULT NOW()
-      );`;
+export async function updateOutcome(
+  id: number,
+  email: string,
+  outcome: OutcomeUpdate,
+) {
+  await ensureAnalysisTableExists();
+
+  // Derive days-in-stock from the available dates when the vehicle is sold.
+  let soldInDays: number | null = null;
+  if (outcome.status === 'vendu' && outcome.soldAt) {
+    const rows = await db
+      .select({ createdAt: carmeloAnalysis.createdAt })
+      .from(carmeloAnalysis)
+      .where(and(eq(carmeloAnalysis.id, id), eq(carmeloAnalysis.email, email)))
+      .limit(1);
+    const start = outcome.boughtAt || rows[0]?.createdAt || null;
+    if (start) {
+      const ms = outcome.soldAt.getTime() - new Date(start).getTime();
+      soldInDays = Math.max(0, Math.round(ms / 86_400_000));
+    }
   }
 
-  const table = pgTable('CarmeloAnalysis', {
-    id: serial('id').primaryKey(),
-    email: varchar('email', { length: 64 }),
-    vehicule: text('vehicule'),
-    analyse: text('analyse'),
-    decision: varchar('decision', { length: 16 }),
-    createdAt: timestamp('created_at'),
-  });
+  return await db
+    .update(carmeloAnalysis)
+    .set({
+      status: outcome.status,
+      realBuyPrice: outcome.realBuyPrice ?? null,
+      realSellPrice: outcome.realSellPrice ?? null,
+      boughtAt: outcome.boughtAt ?? null,
+      soldAt: outcome.soldAt ?? null,
+      soldInDays,
+    })
+    .where(and(eq(carmeloAnalysis.id, id), eq(carmeloAnalysis.email, email)));
+}
 
-  return table;
+let analysisTableReady = false;
+
+async function ensureAnalysisTableExists() {
+  if (analysisTableReady) return;
+
+  await client`
+    CREATE TABLE IF NOT EXISTS "CarmeloAnalysis" (
+      id SERIAL PRIMARY KEY,
+      email VARCHAR(64),
+      vehicule TEXT,
+      analyse TEXT,
+      decision VARCHAR(16),
+      created_at TIMESTAMP DEFAULT NOW()
+    );`;
+
+  // Idempotent migration — add the memory/outcome columns if missing.
+  await client`ALTER TABLE "CarmeloAnalysis"
+    ADD COLUMN IF NOT EXISTS url TEXT,
+    ADD COLUMN IF NOT EXISTS vehicule_resume TEXT,
+    ADD COLUMN IF NOT EXISTS make VARCHAR(48),
+    ADD COLUMN IF NOT EXISTS market_price INTEGER,
+    ADD COLUMN IF NOT EXISTS recommended_max_buy INTEGER,
+    ADD COLUMN IF NOT EXISTS estimated_margin INTEGER,
+    ADD COLUMN IF NOT EXISTS rotation_score INTEGER,
+    ADD COLUMN IF NOT EXISTS confidence INTEGER,
+    ADD COLUMN IF NOT EXISTS status VARCHAR(16) DEFAULT 'analyse',
+    ADD COLUMN IF NOT EXISTS real_buy_price INTEGER,
+    ADD COLUMN IF NOT EXISTS real_sell_price INTEGER,
+    ADD COLUMN IF NOT EXISTS sold_in_days INTEGER,
+    ADD COLUMN IF NOT EXISTS bought_at TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS sold_at TIMESTAMP;`;
+
+  analysisTableReady = true;
 }

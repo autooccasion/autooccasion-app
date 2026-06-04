@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { buildCarmeloSystemPrompt } from '@/lib/carmelo/system-prompt';
+import { fetchListing } from '@/lib/carmelo/fetch-listing';
+import { selectRelevant, buildMemoryBlock } from '@/lib/carmelo/memory';
 import { auth } from 'app/auth';
 import { cookies } from 'next/headers';
-import { saveAnalysis } from 'app/db';
+import { saveAnalysis, getAnalyses } from 'app/db';
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -24,12 +26,57 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => null);
-  const vehicule = body?.vehicule;
+  const vehicule = typeof body?.vehicule === 'string' ? body.vehicule.trim() : '';
+  const url = typeof body?.url === 'string' ? body.url.trim() : '';
 
-  if (!vehicule || typeof vehicule !== 'string' || vehicule.trim().length === 0) {
-    return NextResponse.json({ error: 'Données véhicule manquantes.' }, { status: 400 });
+  if (!vehicule && !url) {
+    return NextResponse.json(
+      { error: 'Fournissez une description ou un lien d\'annonce.' },
+      { status: 400 },
+    );
   }
-  const vehiculeText = vehicule.trim();
+
+  // 1. Try to read the listing from its link so Carmelo checks the real ad.
+  let listingText = '';
+  let listingNote = '';
+  if (url) {
+    const listing = await fetchListing(url);
+    if (listing.ok && listing.text) {
+      listingText = listing.text;
+    } else {
+      listingNote = listing.error || 'Lien illisible.';
+    }
+  }
+
+  if (!vehicule && !listingText) {
+    return NextResponse.json(
+      { error: `Impossible de lire le lien : ${listingNote} Collez le texte de l'annonce.` },
+      { status: 422 },
+    );
+  }
+
+  // 2. Pull GP-CARS memory (real outcomes) relevant to this vehicle.
+  let memoryBlock = '';
+  try {
+    const haystack = `${listingText} ${vehicule}`;
+    const past = await getAnalyses(email, 40);
+    const relevant = selectRelevant(past, haystack);
+    memoryBlock = buildMemoryBlock(relevant);
+  } catch (err) {
+    console.error('Carmelo: mémoire indisponible', err);
+  }
+
+  // 3. Assemble the user message: listing + description + memory.
+  const parts: string[] = [];
+  if (url) parts.push(`LIEN DE L'ANNONCE : ${url}`);
+  if (listingText) {
+    parts.push(`ANNONCE EXTRAITE DU LIEN (à vérifier contre les critères) :\n${listingText}`);
+  } else if (listingNote) {
+    parts.push(`(Lien non lisible automatiquement : ${listingNote})`);
+  }
+  if (vehicule) parts.push(`DESCRIPTION FOURNIE :\n${vehicule}`);
+  if (memoryBlock) parts.push(memoryBlock);
+  const userMessage = parts.join('\n\n');
 
   const client = new Anthropic({ apiKey });
   const encoder = new TextEncoder();
@@ -42,7 +89,7 @@ export async function POST(req: NextRequest) {
           model: 'claude-opus-4-8',
           max_tokens: 2048,
           system: buildCarmeloSystemPrompt(),
-          messages: [{ role: 'user', content: vehiculeText }],
+          messages: [{ role: 'user', content: userMessage }],
         });
 
         for await (const event of messageStream) {
@@ -58,7 +105,7 @@ export async function POST(req: NextRequest) {
         // Persist the completed analysis (best-effort — never break the stream).
         if (full.trim().length > 0) {
           try {
-            await saveAnalysis(email, vehiculeText, full);
+            await saveAnalysis(email, vehicule, full, url || null);
           } catch (err) {
             console.error('Carmelo: échec sauvegarde historique', err);
           }
