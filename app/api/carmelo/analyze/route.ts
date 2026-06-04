@@ -6,7 +6,10 @@ import { selectRelevant, buildMemoryBlock } from '@/lib/carmelo/memory';
 import { parseReport } from '@/lib/carmelo/parse';
 import { auth } from 'app/auth';
 import { cookies } from 'next/headers';
-import { saveAnalysis, getAnalyses, createVehicle } from 'app/db';
+import { saveAnalysis, getAnalyses, createVehicle, saveControllerResult } from 'app/db';
+import { runHardRules } from '@/lib/agents/controller/system-prompt';
+import type { VehicleSummary } from '@/lib/agents/shared-types';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -15,14 +18,23 @@ export async function POST(req: NextRequest) {
   }
   const email = session.user.email;
 
+  // 10 analyses par minute par utilisateur
+  const rl = checkRateLimit(`analyze:${email}`, 10, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Trop de requêtes. Attendez une minute avant de réessayer.' },
+      { status: 429 },
+    );
+  }
+
   const apiKey =
     process.env.ANTHROPIC_API_KEY ||
     cookies().get('gp_api_key')?.value;
 
   if (!apiKey) {
     return NextResponse.json(
-      { error: 'Clé API Anthropic non configurée. Rendez-vous sur /settings pour l\'ajouter.' },
-      { status: 500 }
+      { error: "Clé API Anthropic non configurée. Rendez-vous sur /settings pour l'ajouter." },
+      { status: 500 },
     );
   }
 
@@ -32,12 +44,12 @@ export async function POST(req: NextRequest) {
 
   if (!vehicule && !url) {
     return NextResponse.json(
-      { error: 'Fournissez une description ou un lien d\'annonce.' },
+      { error: "Fournissez une description ou un lien d'annonce." },
       { status: 400 },
     );
   }
 
-  // 1. Try to read the listing from its link so Carmelo checks the real ad.
+  // 1. Lire l'annonce depuis le lien.
   let listingText = '';
   let listingNote = '';
   if (url) {
@@ -56,7 +68,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 2. Pull GP-CARS memory (real outcomes) relevant to this vehicle.
+  // 2. Mémoire GP-CARS — cas passés pertinents.
   let memoryBlock = '';
   try {
     const haystack = `${listingText} ${vehicule}`;
@@ -67,7 +79,7 @@ export async function POST(req: NextRequest) {
     console.error('Carmelo: mémoire indisponible', err);
   }
 
-  // 3. Assemble the user message: listing + description + memory.
+  // 3. Message utilisateur.
   const parts: string[] = [];
   if (url) parts.push(`LIEN DE L'ANNONCE : ${url}`);
   if (listingText) {
@@ -103,16 +115,15 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Persist the completed analysis (best-effort — never break the stream).
+        // Persist + auto-contrôleur (best-effort — ne jamais couper le stream).
         if (full.trim().length > 0) {
           try {
+            // saveAnalysis retourne maintenant les lignes via .returning()
             const analysisRows = await saveAnalysis(email, vehicule, full, url || null);
-            const analysisId = (analysisRows as any)?.[0]?.id ?? null;
+            const analysisId = analysisRows[0]?.id ?? null;
 
-            // Also create (or update) the central Vehicle record so all agents
-            // share the same source of truth from the first analysis.
             const parsed = parseReport(full);
-            await createVehicle(email, {
+            const vehicleRows = await createVehicle(email, {
               make: parsed.make,
               listingUrl: url || null,
               askingPrice: null,
@@ -125,6 +136,37 @@ export async function POST(req: NextRequest) {
               analysisReport: full,
               analysisId,
             });
+
+            // Contrôleur automatique — règles dures uniquement, sans LLM.
+            const newVehicle = vehicleRows[0];
+            if (newVehicle) {
+              const summary: VehicleSummary = {
+                id: newVehicle.id,
+                make: newVehicle.make ?? null,
+                model: newVehicle.model ?? null,
+                year: newVehicle.year ?? null,
+                km: newVehicle.km ?? null,
+                fuel: newVehicle.fuel ?? null,
+                status: (newVehicle.status ?? 'analyse') as VehicleSummary['status'],
+                askingPrice: newVehicle.askingPrice ?? null,
+                maxBuyPrice: newVehicle.maxBuyPrice ?? null,
+                realBuyPrice: newVehicle.realBuyPrice ?? null,
+                realSellPrice: newVehicle.realSellPrice ?? null,
+                decision: (newVehicle.decision ?? 'INCONNU') as VehicleSummary['decision'],
+                soldInDays: newVehicle.soldInDays ?? null,
+                realMargin: newVehicle.realMargin ?? null,
+                publishedAt: newVehicle.publishedAt ?? null,
+                soldAt: newVehicle.soldAt ?? null,
+              };
+              const flags = runHardRules(summary);
+              const hasBlocker = flags.some((f) => f.severity === 'bloquant');
+              await saveControllerResult(newVehicle.id, email, {
+                validated: !hasBlocker,
+                requiresHuman: (parsed.confidence ?? 100) < 85 || hasBlocker,
+                flags,
+                notes: hasBlocker ? 'Bloqué par règles dures — validation manuelle requise.' : '',
+              });
+            }
           } catch (err) {
             console.error('Carmelo: échec sauvegarde', err);
           }

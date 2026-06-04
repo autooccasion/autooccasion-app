@@ -78,7 +78,7 @@ export function computeStockHealth(
   const refused = vehicles.filter((v) => v.status === 'refuse');
 
   const slowVehicles = published.filter((v) => {
-    const days = daysSince((v as any).publishedAt);
+    const days = daysSince(v.publishedAt);
     return days != null && days > slowThresholdDays;
   });
 
@@ -107,18 +107,19 @@ export function computePerformanceKPIs(
   const sold = vehicles.filter((v) => v.status === 'vendu');
 
   const soldLast30 = sold.filter((v) => {
-    const soldAt = (v as any).soldAt;
-    return soldAt && now - new Date(soldAt).getTime() <= ms30;
+    return v.soldAt != null && now - new Date(v.soldAt).getTime() <= ms30;
   });
 
   const soldLast7 = sold.filter((v) => {
-    const soldAt = (v as any).soldAt;
-    return soldAt && now - new Date(soldAt).getTime() <= ms7;
+    return v.soldAt != null && now - new Date(v.soldAt).getTime() <= ms7;
   });
 
+  // Sort on separate copies to avoid mutating the same array twice.
   const makeStats = computeMakeStats(vehicles).filter((m) => m.sold >= 2);
-  const bestMake = makeStats.sort((a, b) => (b.avgMargin || 0) - (a.avgMargin || 0))[0]?.make || null;
-  const worstMake = makeStats.sort((a, b) => (a.avgMargin || 0) - (b.avgMargin || 0))[0]?.make || null;
+  const byMarginDesc = [...makeStats].sort((a, b) => (b.avgMargin || 0) - (a.avgMargin || 0));
+  const byMarginAsc  = [...makeStats].sort((a, b) => (a.avgMargin || 0) - (b.avgMargin || 0));
+  const bestMake  = byMarginDesc[0]?.make || null;
+  const worstMake = byMarginAsc[0]?.make || null;
 
   // Weekly buy target: to maintain stock, we need to replace what we sell.
   const avgSoldPerWeek = soldLast30.length / 4;

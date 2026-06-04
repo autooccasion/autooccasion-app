@@ -1,64 +1,28 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { pgTable, serial, varchar, text, timestamp, integer, boolean, json } from 'drizzle-orm/pg-core';
-import { eq, desc, and, gte, isNotNull } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 import postgres from 'postgres';
 import { genSaltSync, hashSync } from 'bcrypt-ts';
 import { extractDecision } from '@/lib/carmelo/decision';
 import { parseReport } from '@/lib/carmelo/parse';
+import { PLANCHER_FRAIS } from '@/lib/carmelo/config';
 import type { VehicleStatus, AgentDecision, ControllerFlag, VehicleSummary } from '@/lib/agents/shared-types';
 
 export { extractDecision };
 export type { VehicleStatus, AgentDecision, VehicleSummary };
 
-// Optionally, if not using email/pass login, you can
-// use the Drizzle adapter for Auth.js / NextAuth
-// https://authjs.dev/reference/adapter/drizzle
-let client = postgres(`${process.env.POSTGRES_URL!}?sslmode=require`);
-let db = drizzle(client);
+const client = postgres(`${process.env.POSTGRES_URL!}?sslmode=require`);
+const db = drizzle(client);
 
-export async function getUser(email: string) {
-  const users = await ensureTableExists();
-  return await db.select().from(users).where(eq(users.email, email));
-}
+// ============================================================
+// SCHEMA — module-level, never recreated at runtime
+// ============================================================
 
-export async function createUser(email: string, password: string) {
-  const users = await ensureTableExists();
-  let salt = genSaltSync(10);
-  let hash = hashSync(password, salt);
-
-  return await db.insert(users).values({ email, password: hash });
-}
-
-async function ensureTableExists() {
-  const result = await client`
-    SELECT EXISTS (
-      SELECT FROM information_schema.tables
-      WHERE table_schema = 'public'
-      AND table_name = 'User'
-    );`;
-
-  if (!result[0].exists) {
-    await client`
-      CREATE TABLE "User" (
-        id SERIAL PRIMARY KEY,
-        email VARCHAR(64),
-        password VARCHAR(64)
-      );`;
-  }
-
-  const table = pgTable('User', {
-    id: serial('id').primaryKey(),
-    email: varchar('email', { length: 64 }),
-    password: varchar('password', { length: 64 }),
-  });
-
-  return table;
-}
-
-// --- Carmelo analysis history & learning memory ---
-
-// Lifecycle of a vehicle through GP-CARS.
-export type VehicleStatus = 'analyse' | 'achete' | 'vendu' | 'refuse';
+const users = pgTable('User', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 64 }),
+  password: varchar('password', { length: 64 }),
+});
 
 const carmeloAnalysis = pgTable('CarmeloAnalysis', {
   id: serial('id').primaryKey(),
@@ -67,7 +31,6 @@ const carmeloAnalysis = pgTable('CarmeloAnalysis', {
   url: text('url'),
   analyse: text('analyse'),
   decision: varchar('decision', { length: 16 }),
-  // Structured fields parsed from Carmelo's report (the "memory").
   vehiculeResume: text('vehicule_resume'),
   make: varchar('make', { length: 48 }),
   marketPrice: integer('market_price'),
@@ -75,25 +38,226 @@ const carmeloAnalysis = pgTable('CarmeloAnalysis', {
   estimatedMargin: integer('estimated_margin'),
   rotationScore: integer('rotation_score'),
   confidence: integer('confidence'),
-  // Real-world outcome (the learning signal), filled in by the team.
   status: varchar('status', { length: 16 }),
   realBuyPrice: integer('real_buy_price'),
   realSellPrice: integer('real_sell_price'),
   soldInDays: integer('sold_in_days'),
   boughtAt: timestamp('bought_at'),
   soldAt: timestamp('sold_at'),
-  createdAt: timestamp('created_at'),
+  createdAt: timestamp('created_at').defaultNow(),
 });
 
 export type CarmeloAnalysisRecord = typeof carmeloAnalysis.$inferSelect;
+
+const opportunity = pgTable('CarmeloOpportunity', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 64 }),
+  vehicule: text('vehicule'),
+  url: text('url'),
+  askingPrice: integer('asking_price'),
+  targetSell: integer('target_sell'),
+  maxBuy: integer('max_buy'),
+  marginAtAsk: integer('margin_at_ask'),
+  zone: varchar('zone', { length: 16 }),
+  positioning: varchar('positioning', { length: 32 }),
+  contactMessage: text('contact_message'),
+  status: varchar('status', { length: 16 }),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export type OpportunityRecord = typeof opportunity.$inferSelect;
+
+const vehicle = pgTable('Vehicle', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 64 }),
+  make: varchar('make', { length: 48 }),
+  model: varchar('model', { length: 64 }),
+  year: integer('year'),
+  km: integer('km'),
+  fuel: varchar('fuel', { length: 32 }),
+  gearbox: varchar('gearbox', { length: 32 }),
+  color: varchar('color', { length: 32 }),
+  power: varchar('power', { length: 32 }),
+  vin: varchar('vin', { length: 20 }),
+  listingUrl: text('listing_url'),
+  status: varchar('status', { length: 16 }).$type<VehicleStatus>(),
+  askingPrice: integer('asking_price'),
+  marketPrice: integer('market_price'),
+  maxBuyPrice: integer('max_buy_price'),
+  estimatedMargin: integer('estimated_margin'),
+  rotationScore: integer('rotation_score'),
+  confidence: integer('confidence'),
+  decision: varchar('decision', { length: 16 }).$type<AgentDecision>(),
+  analysisReport: text('analysis_report'),
+  analysisId: integer('analysis_id'),
+  realBuyPrice: integer('real_buy_price'),
+  boughtAt: timestamp('bought_at'),
+  listingTitle: text('listing_title'),
+  listingDescription: text('listing_description'),
+  listingPoints: json('listing_points').$type<string[]>(),
+  listingTags: json('listing_tags').$type<string[]>(),
+  publishedAt: timestamp('published_at'),
+  listingExpiresAt: timestamp('listing_expires_at'),
+  publishedPlatforms: json('published_platforms').$type<string[]>(),
+  realSellPrice: integer('real_sell_price'),
+  soldAt: timestamp('sold_at'),
+  soldInDays: integer('sold_in_days'),
+  realMargin: integer('real_margin'),
+  controllerValidated: boolean('controller_validated'),
+  requiresHumanValidation: boolean('requires_human_validation'),
+  controllerFlags: json('controller_flags').$type<ControllerFlag[]>(),
+  controllerNotes: text('controller_notes'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export type VehicleRecord = typeof vehicle.$inferSelect;
+
+const vehicleEvent = pgTable('VehicleEvent', {
+  id: serial('id').primaryKey(),
+  vehicleId: integer('vehicle_id').notNull(),
+  email: varchar('email', { length: 64 }).notNull(),
+  fromStatus: varchar('from_status', { length: 16 }),
+  toStatus: varchar('to_status', { length: 16 }).notNull(),
+  actorType: varchar('actor_type', { length: 16 }).notNull(),
+  agentName: varchar('agent_name', { length: 32 }),
+  note: text('note'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export type VehicleEventRecord = typeof vehicleEvent.$inferSelect;
+
+// ============================================================
+// SINGLE SCHEMA INIT
+// Promise singleton: concurrent requests in the same Node.js process
+// all await the same Promise — no duplicate DDL, no race condition.
+// ============================================================
+
+let _schemaReady: Promise<void> | null = null;
+
+function ensureSchema(): Promise<void> {
+  if (_schemaReady) return _schemaReady;
+  _schemaReady = (async () => {
+    await client`
+      CREATE TABLE IF NOT EXISTS "User" (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(64),
+        password VARCHAR(64)
+      )`;
+
+    await client`
+      CREATE TABLE IF NOT EXISTS "CarmeloAnalysis" (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(64),
+        vehicule TEXT,
+        analyse TEXT,
+        decision VARCHAR(16),
+        created_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await client`
+      ALTER TABLE "CarmeloAnalysis"
+        ADD COLUMN IF NOT EXISTS url TEXT,
+        ADD COLUMN IF NOT EXISTS vehicule_resume TEXT,
+        ADD COLUMN IF NOT EXISTS make VARCHAR(48),
+        ADD COLUMN IF NOT EXISTS market_price INTEGER,
+        ADD COLUMN IF NOT EXISTS recommended_max_buy INTEGER,
+        ADD COLUMN IF NOT EXISTS estimated_margin INTEGER,
+        ADD COLUMN IF NOT EXISTS rotation_score INTEGER,
+        ADD COLUMN IF NOT EXISTS confidence INTEGER,
+        ADD COLUMN IF NOT EXISTS status VARCHAR(16) DEFAULT 'analyse',
+        ADD COLUMN IF NOT EXISTS real_buy_price INTEGER,
+        ADD COLUMN IF NOT EXISTS real_sell_price INTEGER,
+        ADD COLUMN IF NOT EXISTS sold_in_days INTEGER,
+        ADD COLUMN IF NOT EXISTS bought_at TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS sold_at TIMESTAMP`;
+
+    await client`
+      CREATE TABLE IF NOT EXISTS "CarmeloOpportunity" (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(64),
+        vehicule TEXT,
+        url TEXT,
+        asking_price INTEGER,
+        target_sell INTEGER,
+        max_buy INTEGER,
+        margin_at_ask INTEGER,
+        zone VARCHAR(16),
+        positioning VARCHAR(32),
+        contact_message TEXT,
+        status VARCHAR(16) DEFAULT 'nouveau',
+        created_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await client`
+      CREATE TABLE IF NOT EXISTS "Vehicle" (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(64),
+        make VARCHAR(48), model VARCHAR(64), year INTEGER, km INTEGER,
+        fuel VARCHAR(32), gearbox VARCHAR(32), color VARCHAR(32), power VARCHAR(32),
+        vin VARCHAR(20), listing_url TEXT,
+        status VARCHAR(16) DEFAULT 'analyse',
+        asking_price INTEGER, market_price INTEGER, max_buy_price INTEGER,
+        estimated_margin INTEGER, rotation_score INTEGER, confidence INTEGER,
+        decision VARCHAR(16) DEFAULT 'INCONNU',
+        analysis_report TEXT, analysis_id INTEGER,
+        real_buy_price INTEGER, bought_at TIMESTAMP,
+        listing_title TEXT, listing_description TEXT,
+        listing_points JSONB, listing_tags JSONB,
+        published_at TIMESTAMP, listing_expires_at TIMESTAMP,
+        published_platforms JSONB,
+        real_sell_price INTEGER, sold_at TIMESTAMP,
+        sold_in_days INTEGER, real_margin INTEGER,
+        controller_validated BOOLEAN DEFAULT FALSE,
+        requires_human_validation BOOLEAN DEFAULT FALSE,
+        controller_flags JSONB, controller_notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await client`
+      CREATE TABLE IF NOT EXISTS "VehicleEvent" (
+        id SERIAL PRIMARY KEY,
+        vehicle_id INTEGER NOT NULL,
+        email VARCHAR(64) NOT NULL,
+        from_status VARCHAR(16),
+        to_status VARCHAR(16) NOT NULL,
+        actor_type VARCHAR(16) NOT NULL DEFAULT 'human',
+        agent_name VARCHAR(32),
+        note TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )`;
+  })();
+  return _schemaReady;
+}
+
+// ============================================================
+// USER
+// ============================================================
+
+export async function getUser(email: string) {
+  await ensureSchema();
+  return await db.select().from(users).where(eq(users.email, email));
+}
+
+export async function createUser(email: string, password: string) {
+  await ensureSchema();
+  const salt = genSaltSync(10);
+  const hash = hashSync(password, salt);
+  return await db.insert(users).values({ email, password: hash });
+}
+
+// ============================================================
+// CARMELO ANALYSIS
+// ============================================================
 
 export async function saveAnalysis(
   email: string,
   vehicule: string,
   analyse: string,
   url?: string | null,
-) {
-  await ensureAnalysisTableExists();
+): Promise<CarmeloAnalysisRecord[]> {
+  await ensureSchema();
   const parsed = parseReport(analyse);
   return await db.insert(carmeloAnalysis).values({
     email,
@@ -109,11 +273,11 @@ export async function saveAnalysis(
     rotationScore: parsed.rotationScore,
     confidence: parsed.confidence,
     status: 'analyse',
-  });
+  }).returning();
 }
 
 export async function getAnalyses(email: string, limit = 50) {
-  await ensureAnalysisTableExists();
+  await ensureSchema();
   return await db
     .select()
     .from(carmeloAnalysis)
@@ -130,14 +294,8 @@ export type OutcomeUpdate = {
   soldAt?: Date | null;
 };
 
-export async function updateOutcome(
-  id: number,
-  email: string,
-  outcome: OutcomeUpdate,
-) {
-  await ensureAnalysisTableExists();
-
-  // Derive days-in-stock from the available dates when the vehicle is sold.
+export async function updateOutcome(id: number, email: string, outcome: OutcomeUpdate) {
+  await ensureSchema();
   let soldInDays: number | null = null;
   if (outcome.status === 'vendu' && outcome.soldAt) {
     const rows = await db
@@ -151,7 +309,6 @@ export async function updateOutcome(
       soldInDays = Math.max(0, Math.round(ms / 86_400_000));
     }
   }
-
   return await db
     .update(carmeloAnalysis)
     .set({
@@ -165,62 +322,11 @@ export async function updateOutcome(
     .where(and(eq(carmeloAnalysis.id, id), eq(carmeloAnalysis.email, email)));
 }
 
-let analysisTableReady = false;
-
-async function ensureAnalysisTableExists() {
-  if (analysisTableReady) return;
-
-  await client`
-    CREATE TABLE IF NOT EXISTS "CarmeloAnalysis" (
-      id SERIAL PRIMARY KEY,
-      email VARCHAR(64),
-      vehicule TEXT,
-      analyse TEXT,
-      decision VARCHAR(16),
-      created_at TIMESTAMP DEFAULT NOW()
-    );`;
-
-  // Idempotent migration — add the memory/outcome columns if missing.
-  await client`ALTER TABLE "CarmeloAnalysis"
-    ADD COLUMN IF NOT EXISTS url TEXT,
-    ADD COLUMN IF NOT EXISTS vehicule_resume TEXT,
-    ADD COLUMN IF NOT EXISTS make VARCHAR(48),
-    ADD COLUMN IF NOT EXISTS market_price INTEGER,
-    ADD COLUMN IF NOT EXISTS recommended_max_buy INTEGER,
-    ADD COLUMN IF NOT EXISTS estimated_margin INTEGER,
-    ADD COLUMN IF NOT EXISTS rotation_score INTEGER,
-    ADD COLUMN IF NOT EXISTS confidence INTEGER,
-    ADD COLUMN IF NOT EXISTS status VARCHAR(16) DEFAULT 'analyse',
-    ADD COLUMN IF NOT EXISTS real_buy_price INTEGER,
-    ADD COLUMN IF NOT EXISTS real_sell_price INTEGER,
-    ADD COLUMN IF NOT EXISTS sold_in_days INTEGER,
-    ADD COLUMN IF NOT EXISTS bought_at TIMESTAMP,
-    ADD COLUMN IF NOT EXISTS sold_at TIMESTAMP;`;
-
-  analysisTableReady = true;
-}
-
-// --- Detected opportunities (daily good-deals feed) ---
+// ============================================================
+// OPPORTUNITY
+// ============================================================
 
 export type OpportunityStatus = 'nouveau' | 'contacte' | 'ecarte';
-
-const opportunity = pgTable('CarmeloOpportunity', {
-  id: serial('id').primaryKey(),
-  email: varchar('email', { length: 64 }),
-  vehicule: text('vehicule'),
-  url: text('url'),
-  askingPrice: integer('asking_price'),
-  targetSell: integer('target_sell'),
-  maxBuy: integer('max_buy'),
-  marginAtAsk: integer('margin_at_ask'),
-  zone: varchar('zone', { length: 16 }),
-  positioning: varchar('positioning', { length: 32 }),
-  contactMessage: text('contact_message'),
-  status: varchar('status', { length: 16 }),
-  createdAt: timestamp('created_at'),
-});
-
-export type OpportunityRecord = typeof opportunity.$inferSelect;
 
 export type NewOpportunity = {
   vehicule: string;
@@ -235,7 +341,7 @@ export type NewOpportunity = {
 };
 
 export async function saveOpportunity(email: string, data: NewOpportunity) {
-  await ensureOpportunityTableExists();
+  await ensureSchema();
   return await db.insert(opportunity).values({
     email,
     vehicule: data.vehicule,
@@ -252,7 +358,7 @@ export async function saveOpportunity(email: string, data: NewOpportunity) {
 }
 
 export async function getOpportunities(email: string, limit = 50) {
-  await ensureOpportunityTableExists();
+  await ensureSchema();
   return await db
     .select()
     .from(opportunity)
@@ -261,105 +367,17 @@ export async function getOpportunities(email: string, limit = 50) {
     .limit(limit);
 }
 
-export async function updateOpportunityStatus(
-  id: number,
-  email: string,
-  status: OpportunityStatus,
-) {
-  await ensureOpportunityTableExists();
+export async function updateOpportunityStatus(id: number, email: string, status: OpportunityStatus) {
+  await ensureSchema();
   return await db
     .update(opportunity)
     .set({ status })
     .where(and(eq(opportunity.id, id), eq(opportunity.email, email)));
 }
 
-let opportunityTableReady = false;
-
-async function ensureOpportunityTableExists() {
-  if (opportunityTableReady) return;
-  await client`
-    CREATE TABLE IF NOT EXISTS "CarmeloOpportunity" (
-      id SERIAL PRIMARY KEY,
-      email VARCHAR(64),
-      vehicule TEXT,
-      url TEXT,
-      asking_price INTEGER,
-      target_sell INTEGER,
-      max_buy INTEGER,
-      margin_at_ask INTEGER,
-      zone VARCHAR(16),
-      positioning VARCHAR(32),
-      contact_message TEXT,
-      status VARCHAR(16) DEFAULT 'nouveau',
-      created_at TIMESTAMP DEFAULT NOW()
-    );`;
-  opportunityTableReady = true;
-}
-
 // ============================================================
-// VEHICLE — central source of truth shared by all three agents
+// VEHICLE — source de vérité centrale
 // ============================================================
-
-const vehicle = pgTable('Vehicle', {
-  id: serial('id').primaryKey(),
-  email: varchar('email', { length: 64 }),
-
-  // --- Identification ---
-  make: varchar('make', { length: 48 }),
-  model: varchar('model', { length: 64 }),
-  year: integer('year'),
-  km: integer('km'),
-  fuel: varchar('fuel', { length: 32 }),
-  gearbox: varchar('gearbox', { length: 32 }),
-  color: varchar('color', { length: 32 }),
-  power: varchar('power', { length: 32 }),
-  vin: varchar('vin', { length: 20 }),
-  listingUrl: text('listing_url'),
-
-  // --- Lifecycle ---
-  status: varchar('status', { length: 16 }).$type<VehicleStatus>(),
-
-  // --- Agent Achats ---
-  askingPrice: integer('asking_price'),
-  marketPrice: integer('market_price'),
-  maxBuyPrice: integer('max_buy_price'),
-  estimatedMargin: integer('estimated_margin'),
-  rotationScore: integer('rotation_score'),
-  confidence: integer('confidence'),
-  decision: varchar('decision', { length: 16 }).$type<AgentDecision>(),
-  analysisReport: text('analysis_report'),
-  analysisId: integer('analysis_id'),   // FK → CarmeloAnalysis.id
-
-  // --- Purchase reality ---
-  realBuyPrice: integer('real_buy_price'),
-  boughtAt: timestamp('bought_at'),
-
-  // --- Agent Marketing ---
-  listingTitle: text('listing_title'),
-  listingDescription: text('listing_description'),
-  listingPoints: json('listing_points').$type<string[]>(),
-  listingTags: json('listing_tags').$type<string[]>(),
-  publishedAt: timestamp('published_at'),
-  listingExpiresAt: timestamp('listing_expires_at'),
-  publishedPlatforms: json('published_platforms').$type<string[]>(),
-
-  // --- Sale reality ---
-  realSellPrice: integer('real_sell_price'),
-  soldAt: timestamp('sold_at'),
-  soldInDays: integer('sold_in_days'),
-  realMargin: integer('real_margin'),
-
-  // --- Agent Contrôleur ---
-  controllerValidated: boolean('controller_validated'),
-  requiresHumanValidation: boolean('requires_human_validation'),
-  controllerFlags: json('controller_flags').$type<ControllerFlag[]>(),
-  controllerNotes: text('controller_notes'),
-
-  createdAt: timestamp('created_at'),
-  updatedAt: timestamp('updated_at'),
-});
-
-export type VehicleRecord = typeof vehicle.$inferSelect;
 
 export type NewVehicleData = {
   make?: string | null;
@@ -384,7 +402,7 @@ export type NewVehicleData = {
 };
 
 export async function createVehicle(email: string, data: NewVehicleData): Promise<VehicleRecord[]> {
-  await ensureVehicleTableExists();
+  await ensureSchema();
   return await db.insert(vehicle).values({
     email,
     status: 'analyse',
@@ -409,11 +427,13 @@ export async function createVehicle(email: string, data: NewVehicleData): Promis
     analysisId: data.analysisId ?? null,
     controllerValidated: false,
     requiresHumanValidation: (data.confidence ?? 100) < 85,
+    createdAt: new Date(),
+    updatedAt: new Date(),
   }).returning();
 }
 
 export async function getVehicles(email: string, limit = 100): Promise<VehicleRecord[]> {
-  await ensureVehicleTableExists();
+  await ensureSchema();
   return await db
     .select()
     .from(vehicle)
@@ -423,7 +443,7 @@ export async function getVehicles(email: string, limit = 100): Promise<VehicleRe
 }
 
 export async function getVehicle(id: number, email: string): Promise<VehicleRecord | null> {
-  await ensureVehicleTableExists();
+  await ensureSchema();
   const rows = await db
     .select()
     .from(vehicle)
@@ -438,11 +458,19 @@ export async function updateVehicleStatus(
   status: VehicleStatus,
   extra?: Partial<typeof vehicle.$inferInsert>,
 ) {
-  await ensureVehicleTableExists();
-  return await db
+  await ensureSchema();
+  const current = await getVehicle(id, email);
+  await db
     .update(vehicle)
     .set({ status, updatedAt: new Date(), ...extra })
     .where(and(eq(vehicle.id, id), eq(vehicle.email, email)));
+  if (current) {
+    await logVehicleEvent(
+      id, email,
+      (current.status ?? null) as VehicleStatus | null,
+      status,
+    );
+  }
 }
 
 export async function saveMarketingDraft(
@@ -450,7 +478,7 @@ export async function saveMarketingDraft(
   email: string,
   draft: { title: string; description: string; points: string[]; tags: string[] },
 ) {
-  await ensureVehicleTableExists();
+  await ensureSchema();
   return await db
     .update(vehicle)
     .set({
@@ -463,13 +491,8 @@ export async function saveMarketingDraft(
     .where(and(eq(vehicle.id, id), eq(vehicle.email, email)));
 }
 
-export async function recordSale(
-  id: number,
-  email: string,
-  realSellPrice: number,
-  soldAt: Date,
-) {
-  await ensureVehicleTableExists();
+export async function recordSale(id: number, email: string, realSellPrice: number, soldAt: Date) {
+  await ensureSchema();
   const row = await getVehicle(id, email);
   if (!row) return;
 
@@ -477,15 +500,24 @@ export async function recordSale(
   const soldInDays = start
     ? Math.max(0, Math.round((soldAt.getTime() - new Date(start).getTime()) / 86_400_000))
     : null;
-  const realMargin =
-    row.realBuyPrice != null
-      ? realSellPrice - row.realBuyPrice - 1005 // plancher frais approx
-      : null;
+  // PLANCHER_FRAIS = 405 € incompressibles (CT 105 + préparation 100 + publicité 200)
+  const realMargin = row.realBuyPrice != null
+    ? realSellPrice - row.realBuyPrice - PLANCHER_FRAIS
+    : null;
 
-  return await db
+  await db
     .update(vehicle)
     .set({ status: 'vendu', realSellPrice, soldAt, soldInDays, realMargin, updatedAt: new Date() })
     .where(and(eq(vehicle.id, id), eq(vehicle.email, email)));
+
+  await logVehicleEvent(
+    id, email,
+    (row.status ?? null) as VehicleStatus | null,
+    'vendu',
+    'human',
+    undefined,
+    `Vendu ${realSellPrice} €`,
+  );
 }
 
 export async function saveControllerResult(
@@ -493,7 +525,7 @@ export async function saveControllerResult(
   email: string,
   result: { validated: boolean; requiresHuman: boolean; flags: ControllerFlag[]; notes: string },
 ) {
-  await ensureVehicleTableExists();
+  await ensureSchema();
   return await db
     .update(vehicle)
     .set({
@@ -506,9 +538,9 @@ export async function saveControllerResult(
     .where(and(eq(vehicle.id, id), eq(vehicle.email, email)));
 }
 
-// Returns a lightweight summary array for analytics.
+// Lightweight projection for analytics — excludes heavy text fields.
 export async function getVehicleSummaries(email: string): Promise<VehicleSummary[]> {
-  await ensureVehicleTableExists();
+  await ensureSchema();
   const rows = await db
     .select({
       id: vehicle.id,
@@ -525,6 +557,8 @@ export async function getVehicleSummaries(email: string): Promise<VehicleSummary
       decision: vehicle.decision,
       soldInDays: vehicle.soldInDays,
       realMargin: vehicle.realMargin,
+      publishedAt: vehicle.publishedAt,
+      soldAt: vehicle.soldAt,
     })
     .from(vehicle)
     .where(eq(vehicle.email, email))
@@ -545,37 +579,41 @@ export async function getVehicleSummaries(email: string): Promise<VehicleSummary
     decision: (r.decision ?? 'INCONNU') as AgentDecision,
     soldInDays: r.soldInDays ?? null,
     realMargin: r.realMargin ?? null,
+    publishedAt: r.publishedAt ?? null,
+    soldAt: r.soldAt ?? null,
   }));
 }
 
-let vehicleTableReady = false;
+// ============================================================
+// VEHICLE EVENTS — journal d'audit
+// ============================================================
 
-async function ensureVehicleTableExists() {
-  if (vehicleTableReady) return;
-  await client`
-    CREATE TABLE IF NOT EXISTS "Vehicle" (
-      id SERIAL PRIMARY KEY,
-      email VARCHAR(64),
-      make VARCHAR(48), model VARCHAR(64), year INTEGER, km INTEGER,
-      fuel VARCHAR(32), gearbox VARCHAR(32), color VARCHAR(32), power VARCHAR(32),
-      vin VARCHAR(20), listing_url TEXT,
-      status VARCHAR(16) DEFAULT 'analyse',
-      asking_price INTEGER, market_price INTEGER, max_buy_price INTEGER,
-      estimated_margin INTEGER, rotation_score INTEGER, confidence INTEGER,
-      decision VARCHAR(16) DEFAULT 'INCONNU',
-      analysis_report TEXT, analysis_id INTEGER,
-      real_buy_price INTEGER, bought_at TIMESTAMP,
-      listing_title TEXT, listing_description TEXT,
-      listing_points JSONB, listing_tags JSONB,
-      published_at TIMESTAMP, listing_expires_at TIMESTAMP,
-      published_platforms JSONB,
-      real_sell_price INTEGER, sold_at TIMESTAMP,
-      sold_in_days INTEGER, real_margin INTEGER,
-      controller_validated BOOLEAN DEFAULT FALSE,
-      requires_human_validation BOOLEAN DEFAULT FALSE,
-      controller_flags JSONB, controller_notes TEXT,
-      created_at TIMESTAMP DEFAULT NOW(),
-      updated_at TIMESTAMP DEFAULT NOW()
-    );`;
-  vehicleTableReady = true;
+export async function logVehicleEvent(
+  vehicleId: number,
+  email: string,
+  fromStatus: VehicleStatus | null,
+  toStatus: VehicleStatus,
+  actorType: 'human' | 'agent' = 'human',
+  agentName?: string,
+  note?: string,
+) {
+  await ensureSchema();
+  return await db.insert(vehicleEvent).values({
+    vehicleId,
+    email,
+    fromStatus,
+    toStatus,
+    actorType,
+    agentName: agentName ?? null,
+    note: note ?? null,
+  });
+}
+
+export async function getVehicleEvents(vehicleId: number, email: string): Promise<VehicleEventRecord[]> {
+  await ensureSchema();
+  return await db
+    .select()
+    .from(vehicleEvent)
+    .where(and(eq(vehicleEvent.vehicleId, vehicleId), eq(vehicleEvent.email, email)))
+    .orderBy(desc(vehicleEvent.createdAt));
 }

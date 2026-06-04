@@ -5,18 +5,28 @@ import { cookies } from 'next/headers';
 import { getVehicle, saveControllerResult } from 'app/db';
 import { buildControllerSystemPrompt, runHardRules } from '@/lib/agents/controller/system-prompt';
 import type { VehicleSummary } from '@/lib/agents/shared-types';
+import { requirePositiveInt, ValidationError } from '@/lib/validation';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.email) return NextResponse.json({ error: 'Non autorisé.' }, { status: 401 });
   const email = session.user.email;
 
+  const rl = checkRateLimit(`controller:${email}`, 10, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: 'Trop de requêtes.' }, { status: 429 });
+  }
+
   const apiKey = process.env.ANTHROPIC_API_KEY || cookies().get('gp_api_key')?.value;
   if (!apiKey) return NextResponse.json({ error: 'Clé API non configurée.' }, { status: 500 });
 
-  const body = await req.json().catch(() => null);
-  const vehicleId = Number(body?.vehicleId);
-  if (!Number.isFinite(vehicleId)) {
+  const rawBody = await req.json().catch(() => null);
+  let vehicleId: number;
+  try {
+    vehicleId = requirePositiveInt(rawBody?.vehicleId, 'vehicleId');
+  } catch (err) {
+    if (err instanceof ValidationError) return NextResponse.json({ error: err.message }, { status: 400 });
     return NextResponse.json({ error: 'vehicleId invalide.' }, { status: 400 });
   }
 
@@ -38,17 +48,19 @@ export async function POST(req: NextRequest) {
     decision: (row.decision ?? 'INCONNU') as VehicleSummary['decision'],
     soldInDays: row.soldInDays ?? null,
     realMargin: row.realMargin ?? null,
+    publishedAt: row.publishedAt ?? null,
+    soldAt: row.soldAt ?? null,
   };
 
-  // 1. Hard rules — synchronous, no LLM needed.
+  // 1. Règles dures — synchrones, sans LLM.
   const hardFlags = runHardRules(summary);
   const hasBlocker = hardFlags.some((f) => f.severity === 'bloquant');
 
-  // If all hard checks pass, ask the LLM for nuanced analysis.
   let llmFlags: { code: string; severity: string; message: string }[] = [];
   let llmSummary = '';
   let requiresHuman = (row.confidence ?? 100) < 85;
 
+  // 2. LLM uniquement si aucun bloquant (économie de tokens).
   if (!hasBlocker) {
     const client = new Anthropic({ apiKey });
     const userMessage = JSON.stringify({

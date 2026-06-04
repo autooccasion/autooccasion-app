@@ -4,18 +4,28 @@ import { auth } from 'app/auth';
 import { cookies } from 'next/headers';
 import { getVehicle, saveMarketingDraft, updateVehicleStatus } from 'app/db';
 import { buildMarketingSystemPrompt, buildListingUserMessage } from '@/lib/agents/marketing/system-prompt';
+import { requirePositiveInt, optionalString, ValidationError } from '@/lib/validation';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.email) return NextResponse.json({ error: 'Non autorisé.' }, { status: 401 });
   const email = session.user.email;
 
+  const rl = checkRateLimit(`marketing:${email}`, 5, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: 'Trop de requêtes.' }, { status: 429 });
+  }
+
   const apiKey = process.env.ANTHROPIC_API_KEY || cookies().get('gp_api_key')?.value;
   if (!apiKey) return NextResponse.json({ error: 'Clé API non configurée.' }, { status: 500 });
 
-  const body = await req.json().catch(() => null);
-  const vehicleId = Number(body?.vehicleId);
-  if (!Number.isFinite(vehicleId)) {
+  const rawBody = await req.json().catch(() => null);
+  let vehicleId: number;
+  try {
+    vehicleId = requirePositiveInt(rawBody?.vehicleId, 'vehicleId');
+  } catch (err) {
+    if (err instanceof ValidationError) return NextResponse.json({ error: err.message }, { status: 400 });
     return NextResponse.json({ error: 'vehicleId invalide.' }, { status: 400 });
   }
 
@@ -33,10 +43,10 @@ export async function POST(req: NextRequest) {
     gearbox: row.gearbox,
     color: row.color,
     power: row.power,
-    equipment: typeof body?.equipment === 'string' ? body.equipment : null,
-    condition: typeof body?.condition === 'string' ? body.condition : null,
-    maintenanceHistory: typeof body?.maintenanceHistory === 'string' ? body.maintenanceHistory : null,
-    warranty: typeof body?.warranty === 'string' ? body.warranty : null,
+    equipment: optionalString(rawBody?.equipment),
+    condition: optionalString(rawBody?.condition),
+    maintenanceHistory: optionalString(rawBody?.maintenanceHistory),
+    warranty: optionalString(rawBody?.warranty),
     targetSellPrice: row.marketPrice ?? null,
     listingUrl: row.listingUrl,
   });
@@ -55,7 +65,10 @@ export async function POST(req: NextRequest) {
     try {
       draft = JSON.parse(text);
     } catch {
-      return NextResponse.json({ error: 'Réponse inattendue de l\'agent marketing.', raw: text }, { status: 500 });
+      return NextResponse.json(
+        { error: "Réponse inattendue de l'agent marketing.", raw: text },
+        { status: 500 },
+      );
     }
 
     await saveMarketingDraft(vehicleId, email, {

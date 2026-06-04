@@ -6,17 +6,14 @@ import {
   updateVehicleStatus, recordSale, getVehicleSummaries,
   type VehicleStatus,
 } from 'app/db';
+import { assertBody, optionalPositiveInt, optionalString, requirePositiveInt, ValidationError } from '@/lib/validation';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 const VALID_STATUSES: VehicleStatus[] = [
   'prospect','analyse','achete','en_stock','publie','vendu','refuse',
 ];
 
-function toInt(v: unknown): number | null {
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
-}
-
-// GET /api/agents/vehicle?summary=true  — list or summaries
+// GET /api/agents/vehicle?summary=true
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.email) return NextResponse.json({ error: 'Non autorisé.' }, { status: 401 });
@@ -30,64 +27,82 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ vehicles });
 }
 
-// POST /api/agents/vehicle — create or update
+// POST /api/agents/vehicle
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.email) return NextResponse.json({ error: 'Non autorisé.' }, { status: 401 });
   const email = session.user.email;
 
-  const body = await req.json().catch(() => null);
-  if (!body) return NextResponse.json({ error: 'Corps de requête manquant.' }, { status: 400 });
+  const rl = checkRateLimit(`vehicle:${email}`, 60, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: 'Trop de requêtes.' }, { status: 429 });
+  }
 
-  const action = body.action as string | undefined;
+  const rawBody = await req.json().catch(() => null);
 
-  // --- Update status ---
-  if (action === 'set_status') {
-    const id = toInt(body.id);
-    const status = body.status as string;
-    if (!id || !VALID_STATUSES.includes(status as VehicleStatus)) {
-      return NextResponse.json({ error: 'id ou status invalide.' }, { status: 400 });
+  try {
+    assertBody(rawBody);
+    const action = optionalString(rawBody.action);
+
+    // --- Update status ---
+    if (action === 'set_status') {
+      const id = requirePositiveInt(rawBody.id, 'id');
+      const status = rawBody.status;
+      if (typeof status !== 'string' || !VALID_STATUSES.includes(status as VehicleStatus)) {
+        return NextResponse.json({ error: 'Statut invalide.' }, { status: 400 });
+      }
+      const extra: Record<string, unknown> = {};
+      if (status === 'achete') {
+        const price = optionalPositiveInt(rawBody.realBuyPrice);
+        if (price) extra.realBuyPrice = price;
+        if (rawBody.boughtAt) extra.boughtAt = new Date(rawBody.boughtAt as string);
+      }
+      if (status === 'publie') {
+        extra.publishedAt = new Date();
+        if (Array.isArray(rawBody.platforms)) extra.publishedPlatforms = rawBody.platforms;
+      }
+      await updateVehicleStatus(id, email, status as VehicleStatus, extra as any);
+      return NextResponse.json({ ok: true });
     }
-    const extra: Record<string, unknown> = {};
-    if (status === 'achete' && body.realBuyPrice) extra.realBuyPrice = toInt(body.realBuyPrice);
-    if (status === 'achete' && body.boughtAt) extra.boughtAt = new Date(body.boughtAt);
-    if (status === 'publie' && body.platforms) extra.publishedPlatforms = body.platforms;
-    if (status === 'publie') extra.publishedAt = new Date();
-    await updateVehicleStatus(id, email, status as VehicleStatus, extra as any);
-    return NextResponse.json({ ok: true });
-  }
 
-  // --- Record sale ---
-  if (action === 'record_sale') {
-    const id = toInt(body.id);
-    const price = toInt(body.realSellPrice);
-    const soldAt = body.soldAt ? new Date(body.soldAt) : new Date();
-    if (!id || !price) return NextResponse.json({ error: 'id ou prix de vente invalide.' }, { status: 400 });
-    await recordSale(id, email, price, soldAt);
-    return NextResponse.json({ ok: true });
-  }
+    // --- Record sale ---
+    if (action === 'record_sale') {
+      const id = requirePositiveInt(rawBody.id, 'id');
+      const price = requirePositiveInt(rawBody.realSellPrice, 'realSellPrice');
+      const soldAt = rawBody.soldAt ? new Date(rawBody.soldAt as string) : new Date();
+      await recordSale(id, email, price, soldAt);
+      return NextResponse.json({ ok: true });
+    }
 
-  // --- Create new vehicle ---
-  const rows = await createVehicle(email, {
-    make: body.make ?? null,
-    model: body.model ?? null,
-    year: toInt(body.year),
-    km: toInt(body.km),
-    fuel: body.fuel ?? null,
-    gearbox: body.gearbox ?? null,
-    color: body.color ?? null,
-    power: body.power ?? null,
-    vin: body.vin ?? null,
-    listingUrl: body.listingUrl ?? null,
-    askingPrice: toInt(body.askingPrice),
-    marketPrice: toInt(body.marketPrice),
-    maxBuyPrice: toInt(body.maxBuyPrice),
-    estimatedMargin: toInt(body.estimatedMargin),
-    rotationScore: toInt(body.rotationScore),
-    confidence: toInt(body.confidence),
-    decision: body.decision ?? null,
-    analysisReport: body.analysisReport ?? null,
-    analysisId: toInt(body.analysisId),
-  });
-  return NextResponse.json({ vehicle: rows[0] });
+    // --- Create new vehicle ---
+    const rows = await createVehicle(email, {
+      make: optionalString(rawBody.make, { maxLength: 48 }),
+      model: optionalString(rawBody.model, { maxLength: 64 }),
+      year: optionalPositiveInt(rawBody.year),
+      km: optionalPositiveInt(rawBody.km),
+      fuel: optionalString(rawBody.fuel, { maxLength: 32 }),
+      gearbox: optionalString(rawBody.gearbox, { maxLength: 32 }),
+      color: optionalString(rawBody.color, { maxLength: 32 }),
+      power: optionalString(rawBody.power, { maxLength: 32 }),
+      vin: optionalString(rawBody.vin, { maxLength: 20 }),
+      listingUrl: optionalString(rawBody.listingUrl),
+      askingPrice: optionalPositiveInt(rawBody.askingPrice),
+      marketPrice: optionalPositiveInt(rawBody.marketPrice),
+      maxBuyPrice: optionalPositiveInt(rawBody.maxBuyPrice),
+      estimatedMargin: optionalPositiveInt(rawBody.estimatedMargin),
+      rotationScore: optionalPositiveInt(rawBody.rotationScore),
+      confidence: optionalPositiveInt(rawBody.confidence),
+      decision: optionalString(rawBody.decision) as any,
+      analysisReport: optionalString(rawBody.analysisReport),
+      analysisId: optionalPositiveInt(rawBody.analysisId),
+    });
+    return NextResponse.json({ vehicle: rows[0] });
+
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    console.error('Vehicle route error:', err);
+    return NextResponse.json({ error: 'Erreur serveur.' }, { status: 500 });
+  }
 }

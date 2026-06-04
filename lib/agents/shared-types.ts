@@ -34,4 +34,6 @@ export type VehicleSummary = {
   decision: AgentDecision;
   soldInDays: number | null;
   realMargin: number | null;
+  publishedAt: Date | null;
+  soldAt: Date | null;
 };
