@@ -197,3 +197,99 @@ async function ensureAnalysisTableExists() {
 
   analysisTableReady = true;
 }
+
+// --- Detected opportunities (daily good-deals feed) ---
+
+export type OpportunityStatus = 'nouveau' | 'contacte' | 'ecarte';
+
+const opportunity = pgTable('CarmeloOpportunity', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 64 }),
+  vehicule: text('vehicule'),
+  url: text('url'),
+  askingPrice: integer('asking_price'),
+  targetSell: integer('target_sell'),
+  maxBuy: integer('max_buy'),
+  marginAtAsk: integer('margin_at_ask'),
+  zone: varchar('zone', { length: 16 }),
+  positioning: varchar('positioning', { length: 32 }),
+  contactMessage: text('contact_message'),
+  status: varchar('status', { length: 16 }),
+  createdAt: timestamp('created_at'),
+});
+
+export type OpportunityRecord = typeof opportunity.$inferSelect;
+
+export type NewOpportunity = {
+  vehicule: string;
+  url?: string | null;
+  askingPrice?: number | null;
+  targetSell?: number | null;
+  maxBuy?: number | null;
+  marginAtAsk?: number | null;
+  zone?: string | null;
+  positioning?: string | null;
+  contactMessage?: string | null;
+};
+
+export async function saveOpportunity(email: string, data: NewOpportunity) {
+  await ensureOpportunityTableExists();
+  return await db.insert(opportunity).values({
+    email,
+    vehicule: data.vehicule,
+    url: data.url ?? null,
+    askingPrice: data.askingPrice ?? null,
+    targetSell: data.targetSell ?? null,
+    maxBuy: data.maxBuy ?? null,
+    marginAtAsk: data.marginAtAsk ?? null,
+    zone: data.zone ?? null,
+    positioning: data.positioning ?? null,
+    contactMessage: data.contactMessage ?? null,
+    status: 'nouveau',
+  });
+}
+
+export async function getOpportunities(email: string, limit = 50) {
+  await ensureOpportunityTableExists();
+  return await db
+    .select()
+    .from(opportunity)
+    .where(eq(opportunity.email, email))
+    .orderBy(desc(opportunity.createdAt))
+    .limit(limit);
+}
+
+export async function updateOpportunityStatus(
+  id: number,
+  email: string,
+  status: OpportunityStatus,
+) {
+  await ensureOpportunityTableExists();
+  return await db
+    .update(opportunity)
+    .set({ status })
+    .where(and(eq(opportunity.id, id), eq(opportunity.email, email)));
+}
+
+let opportunityTableReady = false;
+
+async function ensureOpportunityTableExists() {
+  if (opportunityTableReady) return;
+  await client`
+    CREATE TABLE IF NOT EXISTS "CarmeloOpportunity" (
+      id SERIAL PRIMARY KEY,
+      email VARCHAR(64),
+      vehicule TEXT,
+      url TEXT,
+      asking_price INTEGER,
+      target_sell INTEGER,
+      max_buy INTEGER,
+      margin_at_ask INTEGER,
+      zone VARCHAR(16),
+      positioning VARCHAR(32),
+      contact_message TEXT,
+      status VARCHAR(16) DEFAULT 'nouveau',
+      created_at TIMESTAMP DEFAULT NOW()
+    );`;
+  opportunityTableReady = true;
+}

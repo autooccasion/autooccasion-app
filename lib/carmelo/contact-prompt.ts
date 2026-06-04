@@ -26,13 +26,18 @@ Contexte (interne — ne pas tout divulguer au vendeur) :
 Objectif du message :
 - Créer un premier contact cordial et professionnel, au nom de GP-CARS.
 - Montrer un intérêt sincère et sérieux pour le véhicule.
+- Vérifier naturellement, sans donner l'impression d'un interrogatoire, les points suivants :
+  1. Le véhicule est-il toujours disponible ?
+  2. Dispose-t-il de tout son historique d'entretien (carnet / factures) ?
+  3. A-t-il déjà été accidenté ?
+  4. Y a-t-il encore un financement / leasing en cours sur le véhicule ?
 - Proposer un rendez-vous / une visite pour voir le véhicule.
-- Ouvrir la discussion sur le prix SANS annoncer de chiffre dans ce premier message (on négocie de vive voix).
-- Demander poliment les infos qui manquent si utile (carnet d'entretien, Car-Pass, état, raison de la vente).
+- Sonder délicatement s'il existe une marge de négociation sur le prix, SANS annoncer de chiffre dans ce premier message (on négocie de vive voix).
 
 Règles :
 - Écris en ${langue}, ton courtois, direct, jamais agressif ni dévalorisant pour le véhicule.
-- Court (4 à 7 phrases), prêt à envoyer.
+- Court mais complet (5 à 9 phrases), fluide et naturel, prêt à envoyer.
+- Pose les questions de façon groupée et polie, pas comme une liste à puces.
 - Ne mentionne JAMAIS notre prix maximum ni notre marge.
 - Ne promets rien que GP-CARS ne pourrait tenir.
 - Signe « GP-CARS ».

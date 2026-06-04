@@ -39,6 +39,8 @@ export default function MarchePage() {
 
   const [message, setMessage] = useState('');
   const [drafting, setDrafting] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   function parseComparables(text: string): number[] {
     return text
@@ -58,6 +60,7 @@ export default function MarchePage() {
     setError('');
     setResult(null);
     setMessage('');
+    setSaved(false);
 
     try {
       const res = await fetch('/api/carmelo/market', {
@@ -76,6 +79,36 @@ export default function MarchePage() {
       setError('Erreur réseau.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleSave() {
+    if (!result) return;
+    setSaving(true);
+    try {
+      const res = await fetch('/api/carmelo/opportunities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vehicule: vehicule || 'Véhicule analysé',
+          askingPrice: result.askingPrice,
+          targetSell: result.targetSell,
+          maxBuy: result.maxBuy,
+          marginAtAsk: result.marginAtAsk,
+          zone: result.zone,
+          positioning: labels?.asking,
+          contactMessage: message || null,
+        }),
+      });
+      if (res.ok) setSaved(true);
+      else {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Échec de l'enregistrement.");
+      }
+    } catch {
+      setError('Erreur réseau.');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -184,13 +217,22 @@ export default function MarchePage() {
 
             {result.isGoodDeal && (
               <div className="space-y-3">
-                <button
-                  onClick={handleDraft}
-                  disabled={drafting}
-                  className="px-5 py-2.5 bg-zinc-100 text-black text-sm font-semibold rounded-lg hover:bg-white disabled:opacity-40 transition-colors"
-                >
-                  {drafting ? 'Rédaction...' : '✍️ Rédiger un message de prise de contact'}
-                </button>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={handleDraft}
+                    disabled={drafting}
+                    className="px-5 py-2.5 bg-zinc-100 text-black text-sm font-semibold rounded-lg hover:bg-white disabled:opacity-40 transition-colors"
+                  >
+                    {drafting ? 'Rédaction...' : '✍️ Rédiger un message de prise de contact'}
+                  </button>
+                  <button
+                    onClick={handleSave}
+                    disabled={saving || saved}
+                    className="px-5 py-2.5 bg-zinc-800 text-zinc-100 text-sm font-semibold rounded-lg hover:bg-zinc-700 disabled:opacity-40 transition-colors"
+                  >
+                    {saved ? '✓ Enregistrée' : saving ? 'Enregistrement...' : '+ Ajouter aux opportunités'}
+                  </button>
+                </div>
                 <p className="text-xs text-zinc-500">
                   À relire et envoyer toi-même — Carmelo ne contacte jamais le vendeur seul.
                 </p>

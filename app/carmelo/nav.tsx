@@ -1,10 +1,11 @@
 import Link from 'next/link';
 
-type Tab = 'analyser' | 'marche' | 'historique' | 'parametres';
+type Tab = 'analyser' | 'marche' | 'opportunites' | 'historique' | 'parametres';
 
 const tabs: { key: Tab; label: string; href: string }[] = [
   { key: 'analyser', label: 'Analyser', href: '/carmelo' },
   { key: 'marche', label: 'Marché', href: '/carmelo/marche' },
+  { key: 'opportunites', label: 'Opportunités', href: '/carmelo/opportunites' },
   { key: 'historique', label: 'Historique', href: '/carmelo/history' },
   { key: 'parametres', label: 'Paramètres', href: '/settings' },
 ];

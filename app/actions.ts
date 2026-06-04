@@ -3,7 +3,12 @@
 import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { auth } from 'app/auth';
-import { updateOutcome, type VehicleStatus } from 'app/db';
+import {
+  updateOutcome,
+  updateOpportunityStatus,
+  type VehicleStatus,
+  type OpportunityStatus,
+} from 'app/db';
 
 export async function saveApiKey(formData: FormData) {
   const session = await auth();
@@ -55,4 +60,25 @@ export async function updateVehicleOutcome(formData: FormData) {
   });
 
   revalidatePath('/carmelo/history');
+}
+
+const VALID_OPPORTUNITY_STATUSES: OpportunityStatus[] = ['nouveau', 'contacte', 'ecarte'];
+
+// Mark an opportunity as contacted / discarded from the daily feed.
+export async function setOpportunityStatus(formData: FormData) {
+  const session = await auth();
+  if (!session?.user?.email) return;
+
+  const id = toInt(formData.get('id'));
+  const status = formData.get('status');
+  if (
+    id == null ||
+    typeof status !== 'string' ||
+    !VALID_OPPORTUNITY_STATUSES.includes(status as OpportunityStatus)
+  ) {
+    return;
+  }
+
+  await updateOpportunityStatus(id, session.user.email, status as OpportunityStatus);
+  revalidatePath('/carmelo/opportunites');
 }
