@@ -160,7 +160,19 @@ export default async function StockPage() {
                         </div>
                       )}
 
-                      <StockActions vehicle={{ id: v.id, status: v.status as string, listingTitle: v.listingTitle, confidence: v.confidence }} />
+                      <StockActions vehicle={{
+                        id: v.id,
+                        status: v.status as string,
+                        listingTitle: v.listingTitle,
+                        confidence: v.confidence,
+                        make: v.make ?? null,
+                        model: v.model ?? null,
+                        year: v.year ?? null,
+                        km: v.km ?? null,
+                        askingPrice: v.askingPrice ?? null,
+                        maxBuyPrice: v.maxBuyPrice ?? null,
+                        listingUrl: v.listingUrl ?? null,
+                      }} />
                     </div>
                   </details>
                 );

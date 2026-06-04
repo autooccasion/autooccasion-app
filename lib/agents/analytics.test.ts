@@ -5,12 +5,12 @@ import type { VehicleSummary } from './shared-types';
 const NOW = new Date();
 const daysAgo = (n: number) => new Date(NOW.getTime() - n * 86_400_000);
 
-const VEHICLES: (VehicleSummary & { soldAt?: Date; publishedAt?: Date })[] = [
-  { id: 1, make: 'Kia',     model: 'Stonic',  year: 2023, km: 28000, fuel: 'essence', status: 'vendu',   askingPrice: 14000, maxBuyPrice: 13000, realBuyPrice: 12500, realSellPrice: 17500, decision: 'VERT',    soldInDays: 22,  realMargin: 3200, soldAt: daysAgo(10) },
-  { id: 2, make: 'Kia',     model: 'Sportage', year: 2022, km: 45000, fuel: 'diesel',  status: 'vendu',   askingPrice: 18000, maxBuyPrice: 17000, realBuyPrice: 16500, realSellPrice: 21000, decision: 'VERT',    soldInDays: 35,  realMargin: 2800, soldAt: daysAgo(5) },
-  { id: 3, make: 'BMW',     model: '320d',     year: 2021, km: 60000, fuel: 'diesel',  status: 'publie',  askingPrice: 22000, maxBuyPrice: 21000, realBuyPrice: 20000, realSellPrice: null,  decision: 'ORANGE',  soldInDays: null, realMargin: null, publishedAt: daysAgo(75) },
-  { id: 4, make: 'Renault', model: 'Clio',     year: 2020, km: 80000, fuel: 'essence', status: 'refuse',  askingPrice: 8000,  maxBuyPrice: null,  realBuyPrice: null,  realSellPrice: null,  decision: 'ROUGE',   soldInDays: null, realMargin: null },
-  { id: 5, make: 'Kia',     model: 'Niro',     year: 2023, km: 15000, fuel: 'hybride', status: 'en_stock',askingPrice: 21000, maxBuyPrice: 20000, realBuyPrice: 19500, realSellPrice: null,  decision: 'VERT',    soldInDays: null, realMargin: null },
+const VEHICLES: VehicleSummary[] = [
+  { id: 1, make: 'Kia',     model: 'Stonic',   year: 2023, km: 28000, fuel: 'essence', status: 'vendu',    askingPrice: 14000, maxBuyPrice: 13000, realBuyPrice: 12500, realSellPrice: 17500, decision: 'VERT',   soldInDays: 22,   realMargin: 3200, soldAt: daysAgo(10), publishedAt: null },
+  { id: 2, make: 'Kia',     model: 'Sportage', year: 2022, km: 45000, fuel: 'diesel',  status: 'vendu',    askingPrice: 18000, maxBuyPrice: 17000, realBuyPrice: 16500, realSellPrice: 21000, decision: 'VERT',   soldInDays: 35,   realMargin: 2800, soldAt: daysAgo(5),  publishedAt: null },
+  { id: 3, make: 'BMW',     model: '320d',     year: 2021, km: 60000, fuel: 'diesel',  status: 'publie',   askingPrice: 22000, maxBuyPrice: 21000, realBuyPrice: 20000, realSellPrice: null,  decision: 'ORANGE', soldInDays: null, realMargin: null, soldAt: null,        publishedAt: daysAgo(75) },
+  { id: 4, make: 'Renault', model: 'Clio',     year: 2020, km: 80000, fuel: 'essence', status: 'refuse',   askingPrice: 8000,  maxBuyPrice: null,  realBuyPrice: null,  realSellPrice: null,  decision: 'ROUGE',  soldInDays: null, realMargin: null, soldAt: null,        publishedAt: null },
+  { id: 5, make: 'Kia',     model: 'Niro',     year: 2023, km: 15000, fuel: 'hybride', status: 'en_stock', askingPrice: 21000, maxBuyPrice: 20000, realBuyPrice: 19500, realSellPrice: null,  decision: 'VERT',   soldInDays: null, realMargin: null, soldAt: null,        publishedAt: null },
 ];
 
 describe('computeMakeStats', () => {
@@ -63,5 +63,13 @@ describe('computePerformanceKPIs', () => {
   it('derives a positive weekly buy target when stock is below target', () => {
     const kpis = computePerformanceKPIs(VEHICLES, 10);
     expect(kpis.weeklyBuyTarget).toBeGreaterThan(0);
+  });
+
+  it('bestMake and worstMake are distinct when two makes have different margins', () => {
+    // Regression test for sort-mutation bug: both were the same make.
+    const kpis = computePerformanceKPIs(VEHICLES);
+    if (kpis.bestMake && kpis.worstMake) {
+      expect(kpis.bestMake).not.toBe(kpis.worstMake);
+    }
   });
 });
