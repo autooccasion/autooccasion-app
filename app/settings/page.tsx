@@ -4,6 +4,8 @@ import { redirect } from 'next/navigation';
 import { saveApiKey } from 'app/actions';
 import CarmeloNav from '../carmelo/nav';
 
+export const dynamic = 'force-dynamic';
+
 export default async function SettingsPage() {
   const session = await auth();
   if (!session?.user) redirect('/login');
