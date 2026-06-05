@@ -3,6 +3,8 @@ import { Form } from 'app/form';
 import { signIn } from 'app/auth';
 import { SubmitButton } from 'app/submit-button';
 
+export const dynamic = 'force-dynamic';
+
 export default function Login() {
   return (
     <div className="flex h-screen w-screen items-center justify-center bg-gray-50">
