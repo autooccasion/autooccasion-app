@@ -184,7 +184,7 @@ export default function StockActions({ vehicle }: { vehicle: VehicleProps }) {
             </div>
           </div>
           <p className="text-xs text-yellow-400/80">
-            ⚠️ Relisez et adaptez avant d'envoyer. Carmelo ne contacte jamais lui-même.
+            ⚠️ Relisez et adaptez avant d&apos;envoyer. Carmelo ne contacte jamais lui-même.
           </p>
           <textarea
             readOnly
