@@ -2,6 +2,7 @@ import { auth } from 'app/auth';
 import { redirect, notFound } from 'next/navigation';
 import { getVehicle, getVehicleEvents } from 'app/db';
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 import GPNav from '../../nav';
 
 export const dynamic = 'force-dynamic';
@@ -29,7 +30,7 @@ function formatDate(d: Date | string | null | undefined): string {
   }).format(new Date(d));
 }
 
-function Field({ label, value }: { label: string; value: string | React.ReactNode }) {
+function Field({ label, value }: { label: string; value: string | ReactNode }) {
   return (
     <div>
       <p className="text-xs text-zinc-500">{label}</p>
@@ -37,8 +38,6 @@ function Field({ label, value }: { label: string; value: string | React.ReactNod
     </div>
   );
 }
-
-import type React from 'react';
 
 export default async function VehicleDetailPage({
   params,
@@ -241,7 +240,7 @@ export default async function VehicleDetailPage({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-3">
       <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">{title}</h2>
