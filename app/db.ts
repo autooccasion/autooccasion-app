@@ -288,7 +288,7 @@ export async function saveAnalysis(
 
 export async function getAnalyses(email: string, limit = 50) {
   await ensureSchema();
-  return await db
+  return await getDb()
     .select()
     .from(carmeloAnalysis)
     .where(eq(carmeloAnalysis.email, email))
@@ -308,7 +308,7 @@ export async function updateOutcome(id: number, email: string, outcome: OutcomeU
   await ensureSchema();
   let soldInDays: number | null = null;
   if (outcome.status === 'vendu' && outcome.soldAt) {
-    const rows = await db
+    const rows = await getDb()
       .select({ createdAt: carmeloAnalysis.createdAt })
       .from(carmeloAnalysis)
       .where(and(eq(carmeloAnalysis.id, id), eq(carmeloAnalysis.email, email)))
@@ -319,7 +319,7 @@ export async function updateOutcome(id: number, email: string, outcome: OutcomeU
       soldInDays = Math.max(0, Math.round(ms / 86_400_000));
     }
   }
-  return await db
+  return await getDb()
     .update(carmeloAnalysis)
     .set({
       status: outcome.status,
@@ -369,7 +369,7 @@ export async function saveOpportunity(email: string, data: NewOpportunity) {
 
 export async function getOpportunities(email: string, limit = 50) {
   await ensureSchema();
-  return await db
+  return await getDb()
     .select()
     .from(opportunity)
     .where(eq(opportunity.email, email))
@@ -379,7 +379,7 @@ export async function getOpportunities(email: string, limit = 50) {
 
 export async function updateOpportunityStatus(id: number, email: string, status: OpportunityStatus) {
   await ensureSchema();
-  return await db
+  return await getDb()
     .update(opportunity)
     .set({ status })
     .where(and(eq(opportunity.id, id), eq(opportunity.email, email)));
@@ -444,7 +444,7 @@ export async function createVehicle(email: string, data: NewVehicleData): Promis
 
 export async function getVehicles(email: string, limit = 100): Promise<VehicleRecord[]> {
   await ensureSchema();
-  return await db
+  return await getDb()
     .select()
     .from(vehicle)
     .where(eq(vehicle.email, email))
@@ -454,7 +454,7 @@ export async function getVehicles(email: string, limit = 100): Promise<VehicleRe
 
 export async function getVehicle(id: number, email: string): Promise<VehicleRecord | null> {
   await ensureSchema();
-  const rows = await db
+  const rows = await getDb()
     .select()
     .from(vehicle)
     .where(and(eq(vehicle.id, id), eq(vehicle.email, email)))
@@ -470,7 +470,7 @@ export async function updateVehicleStatus(
 ) {
   await ensureSchema();
   const current = await getVehicle(id, email);
-  await db
+  await getDb()
     .update(vehicle)
     .set({ status, updatedAt: new Date(), ...extra })
     .where(and(eq(vehicle.id, id), eq(vehicle.email, email)));
@@ -489,7 +489,7 @@ export async function saveMarketingDraft(
   draft: { title: string; description: string; points: string[]; tags: string[] },
 ) {
   await ensureSchema();
-  return await db
+  return await getDb()
     .update(vehicle)
     .set({
       listingTitle: draft.title,
@@ -515,7 +515,7 @@ export async function recordSale(id: number, email: string, realSellPrice: numbe
     ? realSellPrice - row.realBuyPrice - PLANCHER_FRAIS
     : null;
 
-  await db
+  await getDb()
     .update(vehicle)
     .set({ status: 'vendu', realSellPrice, soldAt, soldInDays, realMargin, updatedAt: new Date() })
     .where(and(eq(vehicle.id, id), eq(vehicle.email, email)));
@@ -536,7 +536,7 @@ export async function saveControllerResult(
   result: { validated: boolean; requiresHuman: boolean; flags: ControllerFlag[]; notes: string },
 ) {
   await ensureSchema();
-  return await db
+  return await getDb()
     .update(vehicle)
     .set({
       controllerValidated: result.validated,
@@ -551,7 +551,7 @@ export async function saveControllerResult(
 // Lightweight projection for analytics — excludes heavy text fields.
 export async function getVehicleSummaries(email: string): Promise<VehicleSummary[]> {
   await ensureSchema();
-  const rows = await db
+  const rows = await getDb()
     .select({
       id: vehicle.id,
       make: vehicle.make,
@@ -621,7 +621,7 @@ export async function logVehicleEvent(
 
 export async function getVehicleEvents(vehicleId: number, email: string): Promise<VehicleEventRecord[]> {
   await ensureSchema();
-  return await db
+  return await getDb()
     .select()
     .from(vehicleEvent)
     .where(and(eq(vehicleEvent.vehicleId, vehicleId), eq(vehicleEvent.email, email)))
