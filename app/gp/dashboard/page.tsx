@@ -2,6 +2,7 @@ import { auth } from 'app/auth';
 import { redirect } from 'next/navigation';
 import { getVehicleSummaries } from 'app/db';
 import { computeMakeStats, computeStockHealth, computePerformanceKPIs } from '@/lib/agents/analytics';
+import Link from 'next/link';
 import GPNav from '../nav';
 
 export const dynamic = 'force-dynamic';
@@ -141,7 +142,7 @@ export default async function DashboardPage() {
         {summaries.length === 0 && (
           <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 text-sm text-zinc-400 text-center">
             Aucune donnée disponible.{' '}
-            <a href="/carmelo" className="underline text-zinc-200">Commencer par analyser un véhicule →</a>
+            <Link href="/carmelo" className="underline text-zinc-200">Commencer par analyser un véhicule →</Link>
           </div>
         )}
 

@@ -1,6 +1,7 @@
 import { auth } from 'app/auth';
 import { redirect } from 'next/navigation';
 import { getVehicles } from 'app/db';
+import Link from 'next/link';
 import GPNav from '../nav';
 import StockActions from './actions';
 
@@ -81,7 +82,7 @@ export default async function StockPage() {
         {vehicles.length === 0 && !loadError && (
           <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 text-sm text-zinc-400">
             Aucun véhicule en base.{' '}
-            <a href="/carmelo" className="underline text-zinc-200">Analyser un premier véhicule →</a>
+            <Link href="/carmelo" className="underline text-zinc-200">Analyser un premier véhicule →</Link>
           </div>
         )}
 

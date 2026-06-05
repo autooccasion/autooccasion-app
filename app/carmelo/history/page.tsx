@@ -2,6 +2,7 @@ import { auth } from 'app/auth';
 import { redirect } from 'next/navigation';
 import { getAnalyses } from 'app/db';
 import { updateVehicleOutcome } from 'app/actions';
+import Link from 'next/link';
 import CarmeloNav from '../nav';
 
 export const dynamic = 'force-dynamic';
@@ -77,9 +78,9 @@ export default async function HistoryPage() {
         {!loadError && analyses.length === 0 && (
           <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 text-sm text-zinc-400">
             Aucune analyse enregistrée pour le moment.{' '}
-            <a href="/carmelo" className="underline text-zinc-200">
+            <Link href="/carmelo" className="underline text-zinc-200">
               Analyser un véhicule →
-            </a>
+            </Link>
           </div>
         )}
 

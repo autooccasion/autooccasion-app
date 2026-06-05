@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getOpportunities } from 'app/db';
 import { setOpportunityStatus } from 'app/actions';
 import { buildDigest } from '@/lib/carmelo/digest';
+import Link from 'next/link';
 import CarmeloNav from '../nav';
 
 export const dynamic = 'force-dynamic';
@@ -75,9 +76,9 @@ export default async function OpportunitesPage() {
         {!loadError && opportunities.length === 0 && (
           <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 text-sm text-zinc-400">
             Aucune opportunité enregistrée.{' '}
-            <a href="/carmelo/marche" className="underline text-zinc-200">
+            <Link href="/carmelo/marche" className="underline text-zinc-200">
               Étudier le marché →
-            </a>
+            </Link>
           </div>
         )}
 
