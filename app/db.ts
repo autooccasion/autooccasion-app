@@ -11,8 +11,18 @@ import type { VehicleStatus, AgentDecision, ControllerFlag, VehicleSummary } fro
 export { extractDecision };
 export type { VehicleStatus, AgentDecision, VehicleSummary };
 
-const client = postgres(`${process.env.POSTGRES_URL!}?sslmode=require`);
-const db = drizzle(client);
+let _client: ReturnType<typeof postgres> | undefined;
+let _db: ReturnType<typeof drizzle> | undefined;
+
+function getClient() {
+  if (!_client) _client = postgres(`${process.env.POSTGRES_URL!}?sslmode=require`);
+  return _client;
+}
+
+function getDb() {
+  if (!_db) _db = drizzle(getClient());
+  return _db;
+}
 
 // ============================================================
 // SCHEMA — module-level, never recreated at runtime
@@ -138,14 +148,14 @@ let _schemaReady: Promise<void> | null = null;
 function ensureSchema(): Promise<void> {
   if (_schemaReady) return _schemaReady;
   _schemaReady = (async () => {
-    await client`
+    await getClient()`
       CREATE TABLE IF NOT EXISTS "User" (
         id SERIAL PRIMARY KEY,
         email VARCHAR(64),
         password VARCHAR(64)
       )`;
 
-    await client`
+    await getClient()`
       CREATE TABLE IF NOT EXISTS "CarmeloAnalysis" (
         id SERIAL PRIMARY KEY,
         email VARCHAR(64),
@@ -155,7 +165,7 @@ function ensureSchema(): Promise<void> {
         created_at TIMESTAMP DEFAULT NOW()
       )`;
 
-    await client`
+    await getClient()`
       ALTER TABLE "CarmeloAnalysis"
         ADD COLUMN IF NOT EXISTS url TEXT,
         ADD COLUMN IF NOT EXISTS vehicule_resume TEXT,
@@ -172,7 +182,7 @@ function ensureSchema(): Promise<void> {
         ADD COLUMN IF NOT EXISTS bought_at TIMESTAMP,
         ADD COLUMN IF NOT EXISTS sold_at TIMESTAMP`;
 
-    await client`
+    await getClient()`
       CREATE TABLE IF NOT EXISTS "CarmeloOpportunity" (
         id SERIAL PRIMARY KEY,
         email VARCHAR(64),
@@ -189,7 +199,7 @@ function ensureSchema(): Promise<void> {
         created_at TIMESTAMP DEFAULT NOW()
       )`;
 
-    await client`
+    await getClient()`
       CREATE TABLE IF NOT EXISTS "Vehicle" (
         id SERIAL PRIMARY KEY,
         email VARCHAR(64),
@@ -215,7 +225,7 @@ function ensureSchema(): Promise<void> {
         updated_at TIMESTAMP DEFAULT NOW()
       )`;
 
-    await client`
+    await getClient()`
       CREATE TABLE IF NOT EXISTS "VehicleEvent" (
         id SERIAL PRIMARY KEY,
         vehicle_id INTEGER NOT NULL,
@@ -237,14 +247,14 @@ function ensureSchema(): Promise<void> {
 
 export async function getUser(email: string) {
   await ensureSchema();
-  return await db.select().from(users).where(eq(users.email, email));
+  return await getDb().select().from(users).where(eq(users.email, email));
 }
 
 export async function createUser(email: string, password: string) {
   await ensureSchema();
   const salt = genSaltSync(10);
   const hash = hashSync(password, salt);
-  return await db.insert(users).values({ email, password: hash });
+  return await getDb().insert(users).values({ email, password: hash });
 }
 
 // ============================================================
@@ -259,7 +269,7 @@ export async function saveAnalysis(
 ): Promise<CarmeloAnalysisRecord[]> {
   await ensureSchema();
   const parsed = parseReport(analyse);
-  return await db.insert(carmeloAnalysis).values({
+  return await getDb().insert(carmeloAnalysis).values({
     email,
     vehicule,
     url: url || null,
@@ -342,7 +352,7 @@ export type NewOpportunity = {
 
 export async function saveOpportunity(email: string, data: NewOpportunity) {
   await ensureSchema();
-  return await db.insert(opportunity).values({
+  return await getDb().insert(opportunity).values({
     email,
     vehicule: data.vehicule,
     url: data.url ?? null,
@@ -403,7 +413,7 @@ export type NewVehicleData = {
 
 export async function createVehicle(email: string, data: NewVehicleData): Promise<VehicleRecord[]> {
   await ensureSchema();
-  return await db.insert(vehicle).values({
+  return await getDb().insert(vehicle).values({
     email,
     status: 'analyse',
     make: data.make ?? null,
@@ -598,7 +608,7 @@ export async function logVehicleEvent(
   note?: string,
 ) {
   await ensureSchema();
-  return await db.insert(vehicleEvent).values({
+  return await getDb().insert(vehicleEvent).values({
     vehicleId,
     email,
     fromStatus,

@@ -2,11 +2,8 @@ import './globals.css';
 
 import { GeistSans } from 'geist/font/sans';
 
-export const dynamic = 'force-dynamic';
-
-let title = 'Next.js + Postgres Auth Starter';
-let description =
-  'This is a Next.js starter kit that uses NextAuth.js for simple email + password login and a Postgres database to persist the data.';
+const title = 'GP-CARS';
+const description = 'Plateforme de gestion de stock automobile pour négociants.';
 
 export const metadata = {
   title,
@@ -16,7 +13,6 @@ export const metadata = {
     title,
     description,
   },
-  metadataBase: new URL('https://nextjs-postgres-auth.vercel.app'),
 };
 
 export default function RootLayout({
