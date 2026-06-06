@@ -627,3 +627,16 @@ export async function getVehicleEvents(vehicleId: number, email: string): Promis
     .where(and(eq(vehicleEvent.vehicleId, vehicleId), eq(vehicleEvent.email, email)))
     .orderBy(desc(vehicleEvent.createdAt));
 }
+
+export async function getVehicleByListingUrl(
+  email: string,
+  listingUrl: string,
+): Promise<{ id: number } | null> {
+  await ensureSchema();
+  const rows = await getDb()
+    .select({ id: vehicle.id })
+    .from(vehicle)
+    .where(and(eq(vehicle.email, email), eq(vehicle.listingUrl, listingUrl)))
+    .limit(1);
+  return rows[0] ?? null;
+}
