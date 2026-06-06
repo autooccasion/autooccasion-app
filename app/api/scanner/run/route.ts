@@ -101,5 +101,7 @@ export async function POST(req: NextRequest) {
     results,
     message: `${analyzed} véhicule(s) analysé(s) sur ${newUrls.length} nouveau(x) trouvé(s).`,
     scraperWarning: scan.error,
+    scraperApiActive: !!process.env.SCRAPERAPI_KEY,
+    via: scan.via,
   });
 }

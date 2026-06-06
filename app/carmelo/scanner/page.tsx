@@ -23,8 +23,54 @@ type ScanResponse = {
   results: ScanEntry[];
   message: string;
   scraperWarning?: string;
+  scraperApiActive?: boolean;
+  via?: string;
   error?: string;
 };
+
+function ScraperApiStatus({ result }: { result: ScanResponse | null }) {
+  // After a scan, show whether ScraperAPI was active.
+  if (result) {
+    if (result.scraperApiActive) {
+      return (
+        <div className="flex items-center gap-2 rounded-lg border border-green-800 bg-green-900/20 px-3 py-2 text-xs text-green-300">
+          <span className="inline-block h-2 w-2 rounded-full bg-green-400" />
+          ScraperAPI actif — rendu JavaScript + anti-bot activé
+          <span className="ml-auto text-green-500">via {result.via}</span>
+        </div>
+      );
+    }
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-yellow-800 bg-yellow-900/20 px-3 py-2 text-xs text-yellow-300">
+        <span className="inline-block h-2 w-2 rounded-full bg-yellow-400" />
+        ScraperAPI non configuré — fetch direct (AutoScout24 peut bloquer)
+        <a
+          href="https://www.scraperapi.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-auto underline hover:text-yellow-200"
+        >
+          Activer →
+        </a>
+      </div>
+    );
+  }
+  // Before first scan, show setup hint.
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-xs text-zinc-500">
+      Pour un scraping fiable, ajoutez{' '}
+      <code className="text-zinc-300">SCRAPERAPI_KEY</code> dans vos variables Vercel.{' '}
+      <a
+        href="https://www.scraperapi.com"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-zinc-400 underline hover:text-zinc-300"
+      >
+        Créer un compte gratuit →
+      </a>
+    </div>
+  );
+}
 
 const DECISION_STYLE: Record<string, string> = {
   OR:     'bg-yellow-500/20 text-yellow-300 border border-yellow-600',
@@ -97,6 +143,9 @@ export default function ScannerPage() {
             <span>Marché</span><span className="text-zinc-200">Belgique</span>
           </div>
         </div>
+
+        {/* ScraperAPI status */}
+        <ScraperApiStatus result={result} />
 
         {/* Action */}
         <button

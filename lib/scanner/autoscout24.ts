@@ -1,7 +1,9 @@
 // AutoScout24 Belgium listing scanner.
 // Fetches search result pages and extracts individual listing URLs.
-// Best-effort: AS24 renders client-side so we attempt __NEXT_DATA__ extraction
-// first, then fall back to static href parsing.
+// Uses ScraperAPI (headless Chrome) when SCRAPERAPI_KEY is set;
+// otherwise falls back to a direct fetch (may be blocked by AS24's anti-bot).
+
+import { fetchPage } from './scraper';
 
 const MAKES = ['kia', 'hyundai', 'toyota', 'volkswagen', 'audi', 'bmw', 'mercedes'];
 
@@ -12,6 +14,7 @@ export type ScannedListing = {
 export type ScanResult = {
   listings: ScannedListing[];
   total: number;
+  via?: string;
   error?: string;
 };
 
@@ -37,7 +40,6 @@ function extractUrls(html: string): string[] {
   if (ndMatch) {
     try {
       const ndStr = ndMatch[1];
-      // Listing detail pages always have /fr/d/ in their path.
       const re = /"(\/fr\/d\/[^"\\]+)"/g;
       let m: RegExpExecArray | null;
       while ((m = re.exec(ndStr)) !== null) {
@@ -46,14 +48,14 @@ function extractUrls(html: string): string[] {
     } catch {}
   }
 
-  // Fallback: extract href="/fr/d/…" from static HTML.
+  // Fallback: extract href="/fr/d/…" from rendered HTML.
   const hrefRe = /href="(\/fr\/d\/[^"?#]+)"/g;
   let m: RegExpExecArray | null;
   while ((m = hrefRe.exec(html)) !== null) {
     found.add(`https://www.autoscout24.be${m[1]}`);
   }
 
-  // Also catch absolute URLs already present.
+  // Also catch absolute URLs.
   const absRe = /"(https?:\/\/www\.autoscout24\.be\/fr\/d\/[^"?#\s]+)"/g;
   while ((m = absRe.exec(html)) !== null) {
     found.add(m[1]);
@@ -66,52 +68,27 @@ function extractUrls(html: string): string[] {
 
 export async function scanAutoscout24(pages = 2): Promise<ScanResult> {
   const allUrls = new Set<string>();
+  let via: string | undefined;
 
   for (let page = 1; page <= pages; page++) {
     const searchUrl = buildSearchUrl(page);
-    try {
-      const ac = new AbortController();
-      const t = setTimeout(() => ac.abort(), 15_000);
+    const result = await fetchPage(searchUrl, { render: true, countryCode: 'be', timeoutMs: 25_000 });
+    via = result.via;
 
-      const res = await fetch(searchUrl, {
-        redirect: 'follow',
-        signal: ac.signal,
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-          'Accept-Language': 'fr-BE,fr;q=0.9,nl-BE;q=0.8',
-          Accept:
-            'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-          Referer: 'https://www.autoscout24.be/fr/',
-        },
-      }).finally(() => clearTimeout(t));
-
-      if (!res.ok) {
-        if (page === 1) {
-          return {
-            listings: [],
-            total: 0,
-            error: `AutoScout24 a répondu HTTP ${res.status}. Le site bloque peut-être les robots.`,
-          };
-        }
-        break;
-      }
-
-      const html = await res.text();
-      const urls = extractUrls(html);
-      urls.forEach((u) => allUrls.add(u));
-    } catch (err: unknown) {
+    if (!result.ok) {
       if (page === 1) {
-        const msg = err instanceof Error ? err.message : 'Timeout ou refus de connexion.';
-        return { listings: [], total: 0, error: `Impossible de contacter AutoScout24 : ${msg}` };
+        return { listings: [], total: 0, via: result.via, error: result.error };
       }
       break;
     }
+
+    const urls = extractUrls(result.html!);
+    urls.forEach((u) => allUrls.add(u));
 
     // Polite inter-page delay.
     if (page < pages) await new Promise((r) => setTimeout(r, 1_500));
   }
 
   const listings = Array.from(allUrls).map((url) => ({ url }));
-  return { listings, total: listings.length };
+  return { listings, total: listings.length, via };
 }
