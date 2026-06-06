@@ -57,12 +57,12 @@ export const ROTATION = {
   lent: { min: 0, max: 4, delai_jours: 120 },
 } as const;
 
-// Configurable operational parameters — fill in GP-CARS real values
+// Operational parameters — GP-CARS working values (adjustable by Francisco & Michael)
 export const GP_CARS_PARAMS = {
-  plafond_achat_vehicule: null as number | null,  // e.g. 25000
-  budget_max_jour: null as number | null,          // e.g. 40000
-  seuil_confiance_autonome: null as number | null, // e.g. 85 (percent)
-  coussin_negociation_client_pct: 3,               // 3–5% of sale price
+  plafond_achat_vehicule: 25000,    // Max purchase price per vehicle (€)
+  budget_max_jour: 40000,           // Max total spend per day (€)
+  seuil_confiance_autonome: 85,     // Confidence ≥ this % → autonomous recommendation; below → human validation
+  coussin_negociation_client_pct: 3, // Client negotiation cushion (3–5% of sale price)
 };
 
 // Preferred brands (subject to profitability check)
