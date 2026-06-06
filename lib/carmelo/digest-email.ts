@@ -41,6 +41,8 @@ export type DigestData = {
   inStock: number;
   published: number;
   soldLast30: number;
+  totalStockValue: number;             // capital engagé en stock (€)
+  avgMarginLast30: number | null;      // marge réelle moyenne sur 30j
 };
 
 export function buildDigestEmail(data: DigestData, date = new Date()): string {
@@ -76,7 +78,7 @@ export function buildDigestEmail(data: DigestData, date = new Date()): string {
       <p style="color:#71717a;font-size:13px;margin:0">Bilan du ${jour}</p>
     </div>
 
-    <!-- KPIs -->
+    <!-- KPIs ligne 1 -->
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
       <div style="background:#18181b;border:1px solid #3f3f46;border-radius:8px;padding:12px;text-align:center">
         <p style="color:#71717a;font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.05em">En stock</p>
@@ -89,6 +91,17 @@ export function buildDigestEmail(data: DigestData, date = new Date()): string {
       <div style="background:#18181b;border:1px solid #3f3f46;border-radius:8px;padding:12px;text-align:center">
         <p style="color:#71717a;font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.05em">Vendus (30 j)</p>
         <p style="color:#f4f4f5;font-size:22px;font-weight:700;margin:0">${data.soldLast30}</p>
+      </div>
+    </div>
+    <!-- KPIs ligne 2 — financiers -->
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:8px">
+      <div style="background:#18181b;border:1px solid #3f3f46;border-radius:8px;padding:12px;text-align:center">
+        <p style="color:#71717a;font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.05em">Trésorerie engagée</p>
+        <p style="color:#f4f4f5;font-size:18px;font-weight:700;margin:0">${euro(data.totalStockValue || null)}</p>
+      </div>
+      <div style="background:#18181b;border:1px solid #3f3f46;border-radius:8px;padding:12px;text-align:center">
+        <p style="color:#71717a;font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.05em">Marge moy. 30 j</p>
+        <p style="color:${data.avgMarginLast30 != null && data.avgMarginLast30 >= 2000 ? '#4ade80' : '#fb923c'};font-size:18px;font-weight:700;margin:0">${euro(data.avgMarginLast30)}</p>
       </div>
     </div>
 

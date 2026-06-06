@@ -52,8 +52,18 @@ export async function POST(req: NextRequest) {
     soldAt: row.soldAt ?? null,
   };
 
+  // 0. TTL — analyse de plus de 72h → avertissement (prix de marché potentiellement périmé).
+  const analysisAgeMs = row.createdAt ? Date.now() - new Date(row.createdAt).getTime() : 0;
+  const ttlFlag = analysisAgeMs > 72 * 3_600_000
+    ? [{
+        code: 'ANALYSE_PERIMEE',
+        severity: 'avertissement',
+        message: `Analyse réalisée il y a ${Math.round(analysisAgeMs / 3_600_000)}h. Vérifiez que le véhicule est toujours disponible et que le prix de marché n'a pas évolué.`,
+      }]
+    : [];
+
   // 1. Règles dures — synchrones, sans LLM.
-  const hardFlags = runHardRules(summary);
+  const hardFlags = [...ttlFlag, ...runHardRules(summary)];
   const hasBlocker = hardFlags.some((f) => f.severity === 'bloquant');
 
   let llmFlags: { code: string; severity: string; message: string }[] = [];
@@ -79,7 +89,7 @@ export async function POST(req: NextRequest) {
 
     try {
       const response = await client.messages.create({
-        model: 'claude-opus-4-8',
+        model: 'claude-haiku-4-5',
         max_tokens: 512,
         system: buildControllerSystemPrompt(),
         messages: [{ role: 'user', content: userMessage }],

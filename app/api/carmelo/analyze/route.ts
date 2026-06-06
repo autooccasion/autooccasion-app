@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { buildCarmeloSystemPrompt } from '@/lib/carmelo/system-prompt';
 import { fetchListing } from '@/lib/carmelo/fetch-listing';
-import { selectRelevant, buildMemoryBlock } from '@/lib/carmelo/memory';
+import { selectRelevant, buildMemoryBlock, buildStatsBlock } from '@/lib/carmelo/memory';
 import { parseReport } from '@/lib/carmelo/parse';
 import { auth } from 'app/auth';
 import { cookies } from 'next/headers';
-import { saveAnalysis, getAnalyses, createVehicle, saveControllerResult } from 'app/db';
+import { saveAnalysis, getAnalyses, createVehicle, saveControllerResult, getVehicleSummaries } from 'app/db';
+import { computeMakeStats } from '@/lib/agents/analytics';
 import { runHardRules } from '@/lib/agents/controller/system-prompt';
 import type { VehicleSummary } from '@/lib/agents/shared-types';
 import { checkRateLimit } from '@/lib/rate-limit';
@@ -68,13 +69,19 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 2. Mémoire GP-CARS — cas passés pertinents.
+  // 2. Mémoire GP-CARS — cas passés pertinents + statistiques par marque.
   let memoryBlock = '';
+  let statsBlock = '';
   try {
     const haystack = `${listingText} ${vehicule}`;
-    const past = await getAnalyses(email, 40);
+    const [past, summaries] = await Promise.all([
+      getAnalyses(email, 40),
+      getVehicleSummaries(email),
+    ]);
     const relevant = selectRelevant(past, haystack);
     memoryBlock = buildMemoryBlock(relevant);
+    const makeStats = computeMakeStats(summaries);
+    statsBlock = buildStatsBlock(makeStats);
   } catch (err) {
     console.error('Carmelo: mémoire indisponible', err);
   }
@@ -88,6 +95,7 @@ export async function POST(req: NextRequest) {
     parts.push(`(Lien non lisible automatiquement : ${listingNote})`);
   }
   if (vehicule) parts.push(`DESCRIPTION FOURNIE :\n${vehicule}`);
+  if (statsBlock) parts.push(statsBlock);
   if (memoryBlock) parts.push(memoryBlock);
   const userMessage = parts.join('\n\n');
 

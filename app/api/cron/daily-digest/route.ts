@@ -2,9 +2,10 @@
 // Authenticates via CRON_SECRET (injected automatically by Vercel).
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getVehicles } from 'app/db';
+import { getVehicles, getVehicleSummaries } from 'app/db';
 import { buildDigestEmail } from '@/lib/carmelo/digest-email';
 import { sendEmail } from '@/lib/email';
+import { computeStockHealth, computePerformanceKPIs } from '@/lib/agents/analytics';
 import type { VehicleRecord } from 'app/db';
 
 const SLOW_DAYS = 60;
@@ -59,8 +60,21 @@ export async function GET(req: NextRequest) {
       now - new Date(v.soldAt).getTime() <= ms30;
   }).length;
 
+  // Indicateurs financiers via analytics pur (sans LLM).
+  let totalStockValue = 0;
+  let avgMarginLast30: number | null = null;
+  try {
+    const summaries = await getVehicleSummaries(notifyEmail);
+    const stockHealth = computeStockHealth(summaries);
+    const kpis = computePerformanceKPIs(summaries);
+    totalStockValue = stockHealth.totalStockValue;
+    avgMarginLast30 = kpis.avgMarginLast30;
+  } catch (err) {
+    console.error('Cron digest: échec analytics', err);
+  }
+
   const html = buildDigestEmail(
-    { newOpportunities, slowMovers, inStock, published, soldLast30 },
+    { newOpportunities, slowMovers, inStock, published, soldLast30, totalStockValue, avgMarginLast30 },
     new Date(),
   );
 

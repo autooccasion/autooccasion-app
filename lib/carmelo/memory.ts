@@ -2,6 +2,8 @@
 // injected into Carmelo's context, so it learns from real outcomes instead of
 // guessing. No DB / network here — fully unit-testable.
 
+import type { MakeStats } from '@/lib/agents/analytics';
+
 export type LearningRecord = {
   vehiculeResume?: string | null;
   make?: string | null;
@@ -60,6 +62,25 @@ function formatRecord(r: LearningRecord): string {
     return `- ACHETÉ · ${label} · prix d'achat ${euro(r.realBuyPrice)} (encore en stock)`;
   }
   return `- ANALYSÉ · ${label} · conseil achat max ${euro(r.recommendedMaxBuy)} · décision ${r.decision || '?'}`;
+}
+
+// Returns a compact summary of real GP-CARS performance by make.
+// Only includes makes with at least 2 real sales to avoid noise.
+export function buildStatsBlock(makeStats: MakeStats[]): string {
+  const withData = makeStats.filter((m) => m.sold >= 2);
+  if (withData.length === 0) return '';
+  const lines = withData.map((m) => {
+    const parts: string[] = [`${m.sold} vendu${m.sold > 1 ? 's' : ''}`];
+    if (m.avgMargin != null) parts.push(`marge moy. ${euro(m.avgMargin)}`);
+    if (m.avgDays != null) parts.push(`${m.avgDays}j en stock moy.`);
+    parts.push(`taux de vente ${m.conversionRate}%`);
+    return `- ${m.make} : ${parts.join(', ')}`;
+  });
+  return [
+    '--- PERFORMANCES RÉELLES PAR MARQUE (GP-CARS) ---',
+    ...lines,
+    "Ajuste ton score de rotation et ta prudence en fonction de ces données réelles. Si une marque se vend lentement ou génère peu de marge, sois plus exigeant sur le prix d'achat.",
+  ].join('\n');
 }
 
 // Returns '' when there's nothing useful to inject.
