@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { auth } from 'app/auth';
 import { cookies } from 'next/headers';
-import { getVehicle, saveControllerResult } from 'app/db';
+import { getVehicle, saveControllerResult, getVehicleSummaries } from 'app/db';
 import { buildControllerSystemPrompt, runHardRules } from '@/lib/agents/controller/system-prompt';
 import type { VehicleSummary } from '@/lib/agents/shared-types';
+import { computeSurstockRisk, computeBudgetDisponible } from '@/lib/agents/analytics';
+import { GP_CARS_PARAMS } from '@/lib/carmelo/config';
 import { requirePositiveInt, ValidationError } from '@/lib/validation';
 import { checkRateLimit } from '@/lib/rate-limit';
 
@@ -62,8 +64,40 @@ export async function POST(req: NextRequest) {
       }]
     : [];
 
-  // 1. Règles dures — synchrones, sans LLM.
-  const hardFlags = [...ttlFlag, ...runHardRules(summary)];
+  // 1a. Surstock + budget — vérifications transversales (sans LLM).
+  const contextFlags: { code: string; severity: string; message: string }[] = [];
+  try {
+    const summaries = await getVehicleSummaries(email);
+
+    const surstock = computeSurstockRisk(summaries, row.make, 2);
+    if (surstock?.isRisky) {
+      contextFlags.push({
+        code: 'SURSTOCK_MARQUE',
+        severity: 'avertissement',
+        message: surstock.message,
+      });
+    }
+
+    const budget = computeBudgetDisponible(summaries, GP_CARS_PARAMS.budget_max_jour);
+    if (budget.isExhausted) {
+      contextFlags.push({
+        code: 'BUDGET_JOURNALIER_EPUISE',
+        severity: 'bloquant',
+        message: `Budget journalier épuisé — capital engagé ${budget.capitalEngage.toLocaleString('fr-BE')} € sur ${budget.budgetJournalier.toLocaleString('fr-BE')} € maximum.`,
+      });
+    } else if (budget.isConstrained && row.maxBuyPrice != null && row.maxBuyPrice > budget.budgetRestant) {
+      contextFlags.push({
+        code: 'BUDGET_JOURNALIER_INSUFFISANT',
+        severity: 'avertissement',
+        message: `Trésorerie contrainte — budget restant ${budget.budgetRestant.toLocaleString('fr-BE')} € < prix max conseillé ${row.maxBuyPrice.toLocaleString('fr-BE')} €.`,
+      });
+    }
+  } catch (err) {
+    console.error('Contrôleur: échec vérification surstock/budget', err);
+  }
+
+  // 1b. Règles dures — synchrones, sans LLM.
+  const hardFlags = [...ttlFlag, ...contextFlags, ...runHardRules(summary)];
   const hasBlocker = hardFlags.some((f) => f.severity === 'bloquant');
 
   let llmFlags: { code: string; severity: string; message: string }[] = [];

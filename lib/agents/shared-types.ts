@@ -12,6 +12,9 @@ export type VehicleStatus =
 
 export type AgentDecision = 'VERT' | 'ORANGE' | 'ROUGE' | 'INCONNU';
 
+// 4-tier action classification surfaced to the user after verdict + controller.
+export type ActionRecommandee = 'ACHETER' | 'NÉGOCIER' | 'SURVEILLER' | 'REJETER';
+
 export type ControllerFlag = {
   code: string;
   severity: 'bloquant' | 'avertissement' | 'info';

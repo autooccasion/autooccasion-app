@@ -142,7 +142,8 @@ function buildRefus(vehicule: string, raison: string): CarmeloResult {
     ecartPrixDemandePct: 0,
     niveauConfiance: 100,
     conclusion: raison,
-    actionRecommandee: 'Passer. Ne pas contacter le vendeur.',
+    actionRecommandee: 'REJETER',
+    actionDetail: 'Ne pas contacter le vendeur. Passer au dossier suivant.',
   };
 }
 
@@ -272,5 +273,6 @@ export function analyzeVehicle(data: VehicleData): CarmeloResult {
     niveauConfiance:     qualitative.niveauConfiance,
     conclusion:          verdict.conclusion,
     actionRecommandee:   verdict.actionRecommandee,
+    actionDetail:        verdict.actionDetail,
   };
 }

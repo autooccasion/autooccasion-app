@@ -24,11 +24,15 @@ Bloquer ce qui doit l'être. Alerter pour ce qui nécessite validation humaine.
 ${EXCLUSIONS_ABSOLUES.map((e) => `   - ${e}`).join('\n')}
    Si présent → BLOQUANT.
 
-5. **Annonce** : titre trop court (< 20 chars), description vide → AVERTISSEMENT.
+5. **Surstock** : si la même marque compte déjà ≥ 2 véhicules en stock (acheté/en_stock/publié) → AVERTISSEMENT (risque d'immobilisation concentrée).
 
-6. **Prix de vente vs marché** : prix de vente > 120 % de la valeur de marché estimée → AVERTISSEMENT.
+6. **Trésorerie** : si le capital total engagé en stock approche ou dépasse le budget journalier (${GP_CARS_PARAMS.budget_max_jour.toLocaleString('fr-BE')} €) → AVERTISSEMENT ou BLOQUANT si dépassé.
 
-7. **Confiance** : si Carmelo a indiqué confiance < ${GP_CARS_PARAMS.seuil_confiance_autonome} % → VALIDATION HUMAINE REQUISE.
+7. **Annonce** : titre trop court (< 20 chars), description vide → AVERTISSEMENT.
+
+8. **Prix de vente vs marché** : prix de vente > 120 % de la valeur de marché estimée → AVERTISSEMENT.
+
+9. **Confiance** : si Carmelo a indiqué confiance < ${GP_CARS_PARAMS.seuil_confiance_autonome} % → VALIDATION HUMAINE REQUISE.
 
 ## FORMAT DE SORTIE OBLIGATOIRE
 JSON strict sans markdown :

@@ -96,6 +96,64 @@ export function computeStockHealth(
   };
 }
 
+// --- Surstock & Budget helpers ---
+
+export type SurstockRisk = {
+  make: string;
+  countInStock: number;
+  threshold: number;
+  isRisky: boolean;
+  message: string;
+};
+
+export function computeSurstockRisk(
+  vehicles: VehicleSummary[],
+  targetMake: string | null,
+  threshold = 2,
+): SurstockRisk | null {
+  if (!targetMake) return null;
+  const inStock = vehicles.filter(
+    (v) =>
+      v.make?.toLowerCase() === targetMake.toLowerCase() &&
+      ['achete', 'en_stock', 'publie'].includes(v.status),
+  );
+  const isRisky = inStock.length >= threshold;
+  return {
+    make: targetMake,
+    countInStock: inStock.length,
+    threshold,
+    isRisky,
+    message: isRisky
+      ? `${inStock.length} ${targetMake} déjà en stock (seuil : ${threshold}) — risque de surstock.`
+      : `${inStock.length} ${targetMake} en stock — pas de surstock.`,
+  };
+}
+
+export type BudgetStatus = {
+  capitalEngage: number;
+  budgetJournalier: number;
+  budgetRestant: number;
+  isConstrained: boolean;
+  isExhausted: boolean;
+};
+
+export function computeBudgetDisponible(
+  vehicles: VehicleSummary[],
+  budgetJournalier: number,
+): BudgetStatus {
+  const capitalEngage = vehicles
+    .filter((v) => ['achete', 'en_stock', 'publie'].includes(v.status))
+    .reduce((sum, v) => sum + (v.realBuyPrice ?? 0), 0);
+  const budgetRestant = Math.max(0, budgetJournalier - capitalEngage);
+  return {
+    capitalEngage,
+    budgetJournalier,
+    budgetRestant,
+    isConstrained: budgetRestant < 10_000,
+    isExhausted: budgetRestant <= 0,
+  };
+}
+
 export function computePerformanceKPIs(
   vehicles: VehicleSummary[],
   targetStockLevel = 10,

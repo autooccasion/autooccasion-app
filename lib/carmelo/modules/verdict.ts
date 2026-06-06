@@ -4,6 +4,7 @@ import {
   ScoreRotation,
   ComparaisonVN,
 } from '../types';
+import type { ActionRecommandee } from '../../agents/shared-types';
 
 const SEUIL_ECART_ROUGE_PCT = 5;
 
@@ -25,7 +26,8 @@ export interface VerdictResult {
   alertes: string[];
   ecartPrixDemandePct: number;
   conclusion: string;
-  actionRecommandee: string;
+  actionRecommandee: ActionRecommandee;
+  actionDetail: string;
 }
 
 export function calculerVerdict(input: VerdictInput): VerdictResult {
@@ -90,8 +92,16 @@ export function calculerVerdict(input: VerdictInput): VerdictResult {
     (scoreRisqueMecanique >= 8 && zoneMarge !== 'verte') ||
     (comparaisonVN !== undefined && comparaisonVN.ecartPct < 5);
 
+  const isOr =
+    !isRouge &&
+    zoneMarge === 'exceptionnelle' &&
+    scoreRotation.valeur >= 8 &&
+    scoreRisqueMecanique <= 3 &&
+    penalites === 0;
+
   const isVert =
     !isRouge &&
+    !isOr &&
     (zoneMarge === 'verte' || zoneMarge === 'orange') &&
     scoreRotation.valeur >= 7 &&
     scoreRisqueMecanique <= 5 &&
@@ -99,6 +109,8 @@ export function calculerVerdict(input: VerdictInput): VerdictResult {
 
   if (isRouge) {
     decision = 'ROUGE';
+  } else if (isOr) {
+    decision = 'OR';
   } else if (isVert) {
     decision = 'VERT';
   } else {
@@ -110,23 +122,42 @@ export function calculerVerdict(input: VerdictInput): VerdictResult {
   const rotLabel  = scoreRotation.categorie === 'tres_rapide' ? 'très rapide' : scoreRotation.categorie === 'rapide' ? 'rapide' : scoreRotation.categorie === 'moyenne' ? 'moyenne' : 'lente';
 
   let conclusion: string;
-  if (decision === 'VERT') {
+  if (decision === 'OR') {
+    conclusion = `Opportunité prioritaire. Zone marge exceptionnelle — rotation ${rotLabel} estimée à ${scoreRotation.delaiEstimeJours} jours. Agir rapidement : proposer ${prixAchatCible.toLocaleString('fr')} €, maximum absolu ${prixAchatMaximum.toLocaleString('fr')} €.`;
+  } else if (decision === 'VERT') {
     conclusion = `Bonne affaire. Zone marge ${zoneLabel} — rotation ${rotLabel} estimée à ${scoreRotation.delaiEstimeJours} jours. Acquérir si le prix demandé (${prixDemande.toLocaleString('fr')} €) est négociable à ${prixAchatCible.toLocaleString('fr')} € (cible) — maximum absolu ${prixAchatMaximum.toLocaleString('fr')} €.`;
   } else if (decision === 'ORANGE') {
-    conclusion = `Véhicule potentiellement intéressant mais conditions à surveiller. Zone marge ${zoneLabel} — rotation ${rotLabel}. Négocier à ${prixAchatProbable.toLocaleString('fr')} €, ne pas dépasser ${prixAchatMaximum.toLocaleString('fr')} €.`;
+    const isLente = scoreRotation.categorie === 'lente' || scoreRotation.categorie === 'moyenne';
+    conclusion = isLente
+      ? `Conditions acceptables mais rotation ${rotLabel} — risque d'immobilisation. Surveiller sans s'engager. Négocier à ${prixAchatProbable.toLocaleString('fr')} €, ne pas dépasser ${prixAchatMaximum.toLocaleString('fr')} €.`
+      : `Véhicule potentiellement intéressant mais marge limite. Zone ${zoneLabel} — rotation ${rotLabel}. Négocier à ${prixAchatProbable.toLocaleString('fr')} €, ne pas dépasser ${prixAchatMaximum.toLocaleString('fr')} €.`;
   } else {
     conclusion = `Dossier refusé. Zone marge ${zoneLabel}${ecartPrixDemandePct > 5 ? ` — prix demandé excède le maximum de ${ecartPrixDemandePct}%` : ''}. Passer au véhicule suivant.`;
   }
 
-  // Action recommandée
-  let actionRecommandee: string;
-  if (decision === 'VERT') {
-    actionRecommandee = `Contacter le vendeur. Proposer ${prixAchatCible.toLocaleString('fr')} € — maximum absolu ${prixAchatMaximum.toLocaleString('fr')} €. Attendre validation GP-CARS avant remise officielle.`;
+  // 4-tier action classification
+  let actionRecommandee: ActionRecommandee;
+  let actionDetail: string;
+
+  if (decision === 'OR') {
+    actionRecommandee = 'ACHETER';
+    actionDetail = `🥇 PRIORITAIRE — Contacter immédiatement. Proposer ${prixAchatCible.toLocaleString('fr')} € — maximum ${prixAchatMaximum.toLocaleString('fr')} €. Validation GP-CARS requise avant engagement.`;
+  } else if (decision === 'VERT') {
+    actionRecommandee = 'ACHETER';
+    actionDetail = `Contacter le vendeur. Proposer ${prixAchatCible.toLocaleString('fr')} € — maximum absolu ${prixAchatMaximum.toLocaleString('fr')} €. Validation GP-CARS requise.`;
   } else if (decision === 'ORANGE') {
-    actionRecommandee = `Surveiller. Tenter négociation à ${prixAchatProbable.toLocaleString('fr')} €. Ne pas dépasser ${prixAchatMaximum.toLocaleString('fr')} €. Attendre validation GP-CARS.`;
+    const isLente = scoreRotation.categorie === 'lente' || scoreRotation.categorie === 'moyenne';
+    if (isLente) {
+      actionRecommandee = 'SURVEILLER';
+      actionDetail = `Mettre en veille. Réévaluer si le prix baisse sous ${prixAchatMaximum.toLocaleString('fr')} €.`;
+    } else {
+      actionRecommandee = 'NÉGOCIER';
+      actionDetail = `Tenter négociation à ${prixAchatProbable.toLocaleString('fr')} €. Ne pas dépasser ${prixAchatMaximum.toLocaleString('fr')} €. Validation GP-CARS requise.`;
+    }
   } else {
-    actionRecommandee = 'Passer. Ne pas contacter le vendeur.';
+    actionRecommandee = 'REJETER';
+    actionDetail = 'Ne pas contacter le vendeur. Passer au dossier suivant.';
   }
 
-  return { decision, alertes, ecartPrixDemandePct, conclusion, actionRecommandee };
+  return { decision, alertes, ecartPrixDemandePct, conclusion, actionRecommandee, actionDetail };
 }

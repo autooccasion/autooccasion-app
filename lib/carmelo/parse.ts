@@ -13,6 +13,7 @@ export type ParsedAnalysis = {
   estimatedMargin: number | null;
   rotationScore: number | null;
   confidence: number | null;
+  actionRecommandee: 'ACHETER' | 'NÉGOCIER' | 'SURVEILLER' | 'REJETER' | null;
 };
 
 // Common makes seen on the Belgian market (+ GP-CARS preferred brands).
@@ -55,6 +56,11 @@ export function parseReport(report: string): ParsedAnalysis {
     ? rawResume.replace(/^\[|\]$/g, '').trim() || null
     : null;
 
+  const rawAction = matchLine(text, /Action recommand[ée]e\s*:\s*(\w+)/i)?.toUpperCase() ?? null;
+  const actionRecommandee = (
+    rawAction === 'ACHETER' || rawAction === 'NÉGOCIER' || rawAction === 'SURVEILLER' || rawAction === 'REJETER'
+  ) ? rawAction as 'ACHETER' | 'NÉGOCIER' | 'SURVEILLER' | 'REJETER' : null;
+
   return {
     vehiculeResume,
     make: detectMake(vehiculeResume),
@@ -64,5 +70,6 @@ export function parseReport(report: string): ParsedAnalysis {
     estimatedMargin: parseNumber(matchLine(text, /Marge estim[ée]e\s*:\s*([\d.\s,]+)\s*€/i)),
     rotationScore: parseNumber(matchLine(text, /Score Rotation\s*:\s*([\d]+)\s*\/\s*10/i)),
     confidence: parseNumber(matchLine(text, /Niveau de confiance\s*:\s*([\d]+)\s*%/i)),
+    actionRecommandee,
   };
 }

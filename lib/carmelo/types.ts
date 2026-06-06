@@ -137,5 +137,6 @@ export interface CarmeloResult {
   ecartPrixDemandePct: number;
   niveauConfiance: number;
   conclusion: string;
-  actionRecommandee: string;
+  actionRecommandee: 'ACHETER' | 'NÉGOCIER' | 'SURVEILLER' | 'REJETER';
+  actionDetail: string;
 }
