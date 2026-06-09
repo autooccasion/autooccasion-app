@@ -4,6 +4,7 @@ import { auth } from 'app/auth';
 import {
   createVehicle, getVehicles, getVehicle,
   updateVehicleStatus, recordSale, getVehicleSummaries,
+  updateVehicleFeedback,
   type VehicleStatus,
 } from 'app/db';
 import { assertBody, optionalPositiveInt, optionalString, requirePositiveInt, ValidationError } from '@/lib/validation';
@@ -62,6 +63,17 @@ export async function POST(req: NextRequest) {
         if (Array.isArray(rawBody.platforms)) extra.publishedPlatforms = rawBody.platforms;
       }
       await updateVehicleStatus(id, email, status as VehicleStatus, extra as any);
+      return NextResponse.json({ ok: true });
+    }
+
+    // --- Feedback on analysis quality ---
+    if (action === 'set_feedback') {
+      const id = requirePositiveInt(rawBody.id, 'id');
+      const fb = rawBody.feedback;
+      if (fb !== 'correct' && fb !== 'incorrect') {
+        return NextResponse.json({ error: 'feedback doit être "correct" ou "incorrect".' }, { status: 400 });
+      }
+      await updateVehicleFeedback(id, email, fb);
       return NextResponse.json({ ok: true });
     }
 

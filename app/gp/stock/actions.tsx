@@ -119,7 +119,21 @@ export default function StockActions({ vehicle }: { vehicle: VehicleProps }) {
           <Btn label="Marquer acheté" loading={loading === 'achete'} onClick={() => call('set_status', { status: 'achete' })} />
         )}
         {s === 'achete' && (
-          <Btn label="Mettre en stock" loading={loading === 'en_stock'} onClick={() => call('set_status', { status: 'en_stock' })} />
+          <Btn
+            label="Mettre en stock"
+            loading={loading === 'en_stock'}
+            onClick={async () => {
+              await call('set_status', { status: 'en_stock' });
+              // Auto-draft listing if none exists yet.
+              if (!vehicle.listingTitle) {
+                await fetch('/api/agents/marketing', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ vehicleId: vehicle.id }),
+                }).catch(() => null);
+              }
+            }}
+          />
         )}
         {(s === 'en_stock' || s === 'achete') && (
           <Btn label="✍️ Rédiger annonce" loading={loading === 'listing'} onClick={draftListing} />

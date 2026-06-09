@@ -117,6 +117,7 @@ const vehicle = pgTable('Vehicle', {
   requiresHumanValidation: boolean('requires_human_validation'),
   controllerFlags: json('controller_flags').$type<ControllerFlag[]>(),
   controllerNotes: text('controller_notes'),
+  analysisFeedback: varchar('analysis_feedback', { length: 16 }).$type<'correct' | 'incorrect'>(),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 });
@@ -221,9 +222,14 @@ function ensureSchema(): Promise<void> {
         controller_validated BOOLEAN DEFAULT FALSE,
         requires_human_validation BOOLEAN DEFAULT FALSE,
         controller_flags JSONB, controller_notes TEXT,
+        analysis_feedback VARCHAR(16),
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       )`;
+
+    await getClient()`
+      ALTER TABLE "Vehicle"
+        ADD COLUMN IF NOT EXISTS analysis_feedback VARCHAR(16)`;
 
     await getClient()`
       CREATE TABLE IF NOT EXISTS "VehicleEvent" (
@@ -626,6 +632,18 @@ export async function getVehicleEvents(vehicleId: number, email: string): Promis
     .from(vehicleEvent)
     .where(and(eq(vehicleEvent.vehicleId, vehicleId), eq(vehicleEvent.email, email)))
     .orderBy(desc(vehicleEvent.createdAt));
+}
+
+export async function updateVehicleFeedback(
+  id: number,
+  email: string,
+  feedback: 'correct' | 'incorrect',
+) {
+  await ensureSchema();
+  return await getDb()
+    .update(vehicle)
+    .set({ analysisFeedback: feedback, updatedAt: new Date() })
+    .where(and(eq(vehicle.id, id), eq(vehicle.email, email)));
 }
 
 export async function getVehicleByListingUrl(

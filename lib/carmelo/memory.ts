@@ -13,6 +13,7 @@ export type LearningRecord = {
   realBuyPrice?: number | null;
   realSellPrice?: number | null;
   soldInDays?: number | null;
+  analysisFeedback?: 'correct' | 'incorrect' | null;
   createdAt?: Date | string | null;
 };
 
@@ -29,6 +30,9 @@ function scoreRecord(r: LearningRecord, haystack: string): number {
   if (r.status === 'vendu' && r.realSellPrice != null) score += 4;
   if (r.status === 'achete') score += 2;
   if (r.make && haystack.includes(r.make.toLowerCase())) score += 3;
+  // Feedback boosts confirmed-correct analyses and flags incorrect ones.
+  if (r.analysisFeedback === 'correct') score += 2;
+  if (r.analysisFeedback === 'incorrect') score -= 1;
   return score;
 }
 
@@ -54,14 +58,15 @@ export function selectRelevant(
 
 function formatRecord(r: LearningRecord): string {
   const label = r.vehiculeResume || r.make || 'Véhicule';
+  const fb = r.analysisFeedback === 'correct' ? ' ✓' : r.analysisFeedback === 'incorrect' ? ' ✗ ANALYSE INCORRECTE' : '';
   if (r.status === 'vendu' && r.realSellPrice != null) {
     const days = r.soldInDays != null ? `${r.soldInDays} j` : 'délai inconnu';
-    return `- VENDU · ${label} · acheté ${euro(r.realBuyPrice)} → vendu ${euro(r.realSellPrice)} en ${days}`;
+    return `- VENDU · ${label} · acheté ${euro(r.realBuyPrice)} → vendu ${euro(r.realSellPrice)} en ${days}${fb}`;
   }
   if (r.status === 'achete') {
-    return `- ACHETÉ · ${label} · prix d'achat ${euro(r.realBuyPrice)} (encore en stock)`;
+    return `- ACHETÉ · ${label} · prix d'achat ${euro(r.realBuyPrice)} (encore en stock)${fb}`;
   }
-  return `- ANALYSÉ · ${label} · conseil achat max ${euro(r.recommendedMaxBuy)} · décision ${r.decision || '?'}`;
+  return `- ANALYSÉ · ${label} · conseil achat max ${euro(r.recommendedMaxBuy)} · décision ${r.decision || '?'}${fb}`;
 }
 
 // Returns a compact summary of real GP-CARS performance by make.

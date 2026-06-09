@@ -4,6 +4,7 @@ import { getVehicle, getVehicleEvents } from 'app/db';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import GPNav from '../../nav';
+import FeedbackPanel from './feedback';
 
 export const dynamic = 'force-dynamic';
 
@@ -126,6 +127,8 @@ export default async function VehicleDetailPage({
             <Field label="Score rotation" value={v.rotationScore != null ? `${v.rotationScore}/10` : '—'} />
             <Field label="Analysé le" value={formatDate(v.createdAt)} />
           </div>
+
+          <FeedbackPanel vehicleId={v.id} current={(v as any).analysisFeedback ?? null} />
 
           {v.analysisReport && (
             <details className="mt-3">

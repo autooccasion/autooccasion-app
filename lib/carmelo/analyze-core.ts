@@ -81,6 +81,11 @@ export async function runCarmeloAnalysis(
 
     const vehicleRows = await createVehicle(email, {
       make: parsed.make,
+      model: parsed.model,
+      year: parsed.year,
+      km: parsed.km,
+      fuel: parsed.fuel,
+      gearbox: parsed.gearbox,
       listingUrl: url,
       askingPrice: null,
       marketPrice: parsed.marketPrice,
