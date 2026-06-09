@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-type Tab = 'analyser' | 'scanner' | 'marche' | 'opportunites' | 'historique' | 'parametres';
+type Tab = 'analyser' | 'scanner' | 'marche' | 'opportunites' | 'historique' | 'import' | 'parametres';
 
 const tabs: { key: Tab; label: string; href: string }[] = [
   { key: 'analyser',    label: 'Analyser',   href: '/carmelo' },
@@ -8,6 +8,7 @@ const tabs: { key: Tab; label: string; href: string }[] = [
   { key: 'marche',      label: 'Marché',     href: '/carmelo/marche' },
   { key: 'opportunites',label: 'Opportunités',href: '/carmelo/opportunites' },
   { key: 'historique',  label: 'Historique', href: '/carmelo/history' },
+  { key: 'import',      label: 'Import CSV', href: '/carmelo/import' },
   { key: 'parametres',  label: 'Paramètres', href: '/settings' },
 ];
 

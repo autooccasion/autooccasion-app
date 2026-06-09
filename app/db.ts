@@ -658,3 +658,107 @@ export async function getVehicleByListingUrl(
     .limit(1);
   return rows[0] ?? null;
 }
+
+// Returns Vehicle records shaped as LearningRecords for Carmelo's memory.
+// Replaces getAnalyses() so that imported history feeds the RAG context.
+export async function getVehiclesForMemory(email: string, limit = 60) {
+  await ensureSchema();
+  const rows = await getDb()
+    .select({
+      make:             vehicle.make,
+      model:            vehicle.model,
+      year:             vehicle.year,
+      status:           vehicle.status,
+      decision:         vehicle.decision,
+      maxBuyPrice:      vehicle.maxBuyPrice,
+      realBuyPrice:     vehicle.realBuyPrice,
+      realSellPrice:    vehicle.realSellPrice,
+      soldInDays:       vehicle.soldInDays,
+      analysisFeedback: vehicle.analysisFeedback,
+      createdAt:        vehicle.createdAt,
+    })
+    .from(vehicle)
+    .where(eq(vehicle.email, email))
+    .orderBy(desc(vehicle.createdAt))
+    .limit(limit);
+
+  return rows.map((r) => ({
+    vehiculeResume: [r.make, r.model, r.year].filter(Boolean).join(' ') || null,
+    make:             r.make ?? null,
+    decision:         r.decision ?? null,
+    recommendedMaxBuy: r.maxBuyPrice ?? null,
+    status:           r.status ?? null,
+    realBuyPrice:     r.realBuyPrice ?? null,
+    realSellPrice:    r.realSellPrice ?? null,
+    soldInDays:       r.soldInDays ?? null,
+    analysisFeedback: (r.analysisFeedback as 'correct' | 'incorrect' | null) ?? null,
+    createdAt:        r.createdAt ?? null,
+  }));
+}
+
+export type ImportRow = {
+  make: string;
+  model?: string | null;
+  year?: number | null;
+  km?: number | null;
+  fuel?: string | null;
+  gearbox?: string | null;
+  color?: string | null;
+  askingPrice?: number | null;
+  realBuyPrice?: number | null;
+  realSellPrice?: number | null;
+  soldInDays?: number | null;
+  boughtAt?: Date | null;
+  soldAt?: Date | null;
+  status: VehicleStatus;
+  listingUrl?: string | null;
+};
+
+export async function bulkImportVehicles(
+  email: string,
+  rows: ImportRow[],
+): Promise<{ imported: number; errors: { row: number; error: string }[] }> {
+  await ensureSchema();
+  let imported = 0;
+  const errors: { row: number; error: string }[] = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    try {
+      const realMargin =
+        r.realBuyPrice != null && r.realSellPrice != null
+          ? r.realSellPrice - r.realBuyPrice - PLANCHER_FRAIS
+          : null;
+
+      await getDb().insert(vehicle).values({
+        email,
+        make:         r.make,
+        model:        r.model ?? null,
+        year:         r.year ?? null,
+        km:           r.km ?? null,
+        fuel:         r.fuel ?? null,
+        gearbox:      r.gearbox ?? null,
+        color:        r.color ?? null,
+        listingUrl:   r.listingUrl ?? null,
+        status:       r.status,
+        askingPrice:  r.askingPrice ?? null,
+        realBuyPrice: r.realBuyPrice ?? null,
+        boughtAt:     r.boughtAt ?? null,
+        realSellPrice: r.realSellPrice ?? null,
+        soldAt:       r.soldAt ?? null,
+        soldInDays:   r.soldInDays ?? null,
+        realMargin,
+        decision:     'INCONNU',
+        controllerValidated: false,
+        requiresHumanValidation: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      imported++;
+    } catch (err: unknown) {
+      errors.push({ row: i + 2, error: err instanceof Error ? err.message : 'Erreur inconnue' });
+    }
+  }
+
+  return { imported, errors };
+}

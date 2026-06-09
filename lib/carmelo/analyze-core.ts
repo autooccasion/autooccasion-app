@@ -7,7 +7,7 @@ import { buildCarmeloSystemPrompt } from './system-prompt';
 import { fetchListing } from './fetch-listing';
 import { selectRelevant, buildMemoryBlock, buildStatsBlock } from './memory';
 import { parseReport } from './parse';
-import { saveAnalysis, getAnalyses, createVehicle, saveControllerResult, getVehicleSummaries } from 'app/db';
+import { saveAnalysis, getVehiclesForMemory, createVehicle, saveControllerResult, getVehicleSummaries } from 'app/db';
 import { computeMakeStats } from '@/lib/agents/analytics';
 import { runHardRules } from '@/lib/agents/controller/system-prompt';
 import type { VehicleSummary } from '@/lib/agents/shared-types';
@@ -41,7 +41,7 @@ export async function runCarmeloAnalysis(
   let statsBlock = '';
   try {
     const [past, summaries] = await Promise.all([
-      getAnalyses(email, 40),
+      getVehiclesForMemory(email, 40),
       getVehicleSummaries(email),
     ]);
     memoryBlock = buildMemoryBlock(selectRelevant(past, listing.text));

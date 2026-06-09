@@ -6,7 +6,7 @@ import { selectRelevant, buildMemoryBlock, buildStatsBlock } from '@/lib/carmelo
 import { parseReport } from '@/lib/carmelo/parse';
 import { auth } from 'app/auth';
 import { cookies } from 'next/headers';
-import { saveAnalysis, getAnalyses, createVehicle, saveControllerResult, getVehicleSummaries } from 'app/db';
+import { saveAnalysis, getVehiclesForMemory, createVehicle, saveControllerResult, getVehicleSummaries } from 'app/db';
 import { computeMakeStats } from '@/lib/agents/analytics';
 import { runHardRules } from '@/lib/agents/controller/system-prompt';
 import type { VehicleSummary } from '@/lib/agents/shared-types';
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
   try {
     const haystack = `${listingText} ${vehicule}`;
     const [past, summaries] = await Promise.all([
-      getAnalyses(email, 40),
+      getVehiclesForMemory(email, 40),
       getVehicleSummaries(email),
     ]);
     const relevant = selectRelevant(past, haystack);
