@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => null);
   const messages: Message[] = Array.isArray(body?.messages) ? body.messages : [];
+  const demo: boolean = body?.demo === true;
   if (messages.length === 0) {
     return NextResponse.json({ error: 'Messages requis.' }, { status: 400 });
   }
@@ -70,8 +71,8 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Save lead if MADORE generated a report.
-        if (full.includes('# RAPPORT MADORE')) {
+        // Save lead only in production mode (not demo/test).
+        if (!demo && full.includes('# RAPPORT MADORE')) {
           const report = parseMadoreReport(full);
           if (report) {
             await saveLead({ ...report, conversation: messages }).catch((err) =>

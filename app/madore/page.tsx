@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 
 type Message = { role: 'user' | 'assistant'; content: string };
 
@@ -37,6 +38,9 @@ function MessageBubble({ msg }: { msg: Message }) {
 }
 
 export default function MadorePage() {
+  const params = useSearchParams();
+  const demo = params.get('demo') === 'true' || params.get('demo') === '1';
+
   const [messages, setMessages] = useState<Message[]>([WELCOME]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -64,7 +68,7 @@ export default function MadorePage() {
       const res = await fetch('/api/madore/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history }),
+        body: JSON.stringify({ messages: history, demo }),
       });
 
       if (!res.body) throw new Error('No body');
@@ -101,6 +105,15 @@ export default function MadorePage() {
 
   return (
     <div className="min-h-screen bg-zinc-950 flex flex-col">
+
+      {/* Banner mode test */}
+      {demo && (
+        <div className="bg-yellow-950 border-b border-yellow-800 px-4 py-2 text-center">
+          <p className="text-yellow-300 text-xs font-semibold">
+            ⚙️ MODE TEST — Les conversations ne sont pas sauvegardées. Utilisez ce mode pour entraîner et vérifier MADORE.
+          </p>
+        </div>
+      )}
 
       {/* Header */}
       <header className="bg-zinc-900 border-b border-zinc-800 px-4 py-3 flex items-center gap-3">
