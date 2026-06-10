@@ -1,6 +1,6 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { pgTable, serial, varchar, text, timestamp, integer, boolean, json } from 'drizzle-orm/pg-core';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc, and, inArray } from 'drizzle-orm';
 import postgres from 'postgres';
 import { genSaltSync, hashSync } from 'bcrypt-ts';
 import { extractDecision } from '@/lib/carmelo/decision';
@@ -124,6 +124,30 @@ const vehicle = pgTable('Vehicle', {
 
 export type VehicleRecord = typeof vehicle.$inferSelect;
 
+const madoreLead = pgTable('MadoreLead', {
+  id: serial('id').primaryKey(),
+  prospectName:       varchar('prospect_name', { length: 128 }),
+  prospectPhone:      varchar('prospect_phone', { length: 32 }),
+  prospectEmail:      varchar('prospect_email', { length: 128 }),
+  vehicleSearch:      text('vehicle_search'),
+  budget:             integer('budget'),
+  financing:          boolean('financing'),
+  tradeIn:            boolean('trade_in'),
+  buyDelay:           varchar('buy_delay', { length: 64 }),
+  postalCode:         varchar('postal_code', { length: 16 }),
+  score:              integer('score'),
+  priority:           varchar('priority', { length: 16 }),
+  saleProbability:    integer('sale_probability'),
+  summary:            text('summary'),
+  actionRecommended:  text('action_recommended'),
+  conversation:       json('conversation').$type<{role:string;content:string}[]>(),
+  status:             varchar('status', { length: 16 }),
+  createdAt:          timestamp('created_at').defaultNow(),
+  updatedAt:          timestamp('updated_at').defaultNow(),
+});
+
+export type MadoreLeadRecord = typeof madoreLead.$inferSelect;
+
 const vehicleEvent = pgTable('VehicleEvent', {
   id: serial('id').primaryKey(),
   vehicleId: integer('vehicle_id').notNull(),
@@ -242,6 +266,29 @@ function ensureSchema(): Promise<void> {
         agent_name VARCHAR(32),
         note TEXT,
         created_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "MadoreLead" (
+        id SERIAL PRIMARY KEY,
+        prospect_name VARCHAR(128),
+        prospect_phone VARCHAR(32),
+        prospect_email VARCHAR(128),
+        vehicle_search TEXT,
+        budget INTEGER,
+        financing BOOLEAN,
+        trade_in BOOLEAN,
+        buy_delay VARCHAR(64),
+        postal_code VARCHAR(16),
+        score INTEGER,
+        priority VARCHAR(16),
+        sale_probability INTEGER,
+        summary TEXT,
+        action_recommended TEXT,
+        conversation JSONB,
+        status VARCHAR(16) DEFAULT 'nouveau',
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
       )`;
   })();
   return _schemaReady;
@@ -713,6 +760,66 @@ export type ImportRow = {
   status: VehicleStatus;
   listingUrl?: string | null;
 };
+
+// ============================================================
+// STOCK — véhicules disponibles pour MADORE
+// ============================================================
+
+export async function getStockVehicles(ownerEmail: string) {
+  await ensureSchema();
+  return await getDb()
+    .select()
+    .from(vehicle)
+    .where(and(eq(vehicle.email, ownerEmail), inArray(vehicle.status as any, ['en_stock', 'publie'])))
+    .orderBy(desc(vehicle.createdAt))
+    .limit(50);
+}
+
+// ============================================================
+// MADORE LEADS
+// ============================================================
+
+export type SaveLeadInput = {
+  prospectName?: string | null;
+  prospectPhone?: string | null;
+  prospectEmail?: string | null;
+  vehicleSearch?: string | null;
+  budget?: number | null;
+  financing?: boolean | null;
+  tradeIn?: boolean | null;
+  buyDelay?: string | null;
+  postalCode?: string | null;
+  score?: number | null;
+  priority?: string | null;
+  saleProbability?: number | null;
+  summary?: string | null;
+  actionRecommended?: string | null;
+  conversation?: {role:string;content:string}[] | null;
+};
+
+export async function saveLead(input: SaveLeadInput): Promise<MadoreLeadRecord[]> {
+  await ensureSchema();
+  return await getDb().insert(madoreLead).values({
+    ...input,
+    status: 'nouveau',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }).returning();
+}
+
+export async function getLeads(limit = 100): Promise<MadoreLeadRecord[]> {
+  await ensureSchema();
+  return await getDb()
+    .select()
+    .from(madoreLead)
+    .orderBy(desc(madoreLead.createdAt))
+    .limit(limit);
+}
+
+export async function updateLeadStatus(id: number, status: string): Promise<void> {
+  await ensureSchema();
+  await getDb().update(madoreLead).set({ status, updatedAt: new Date() }).where(eq(madoreLead.id, id));
+}
 
 export async function bulkImportVehicles(
   email: string,
