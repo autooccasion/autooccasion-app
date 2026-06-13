@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 type Message = { role: 'user' | 'assistant'; content: string };
@@ -37,7 +37,16 @@ function MessageBubble({ msg }: { msg: Message }) {
   );
 }
 
+// Wrapped in Suspense because useSearchParams() requires it in Next.js 14 App Router.
 export default function MadorePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-zinc-950" />}>
+      <MadoreChat />
+    </Suspense>
+  );
+}
+
+function MadoreChat() {
   const params = useSearchParams();
   const demo = params.get('demo') === 'true' || params.get('demo') === '1';
 
