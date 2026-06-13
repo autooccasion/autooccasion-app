@@ -1,346 +1,621 @@
-# AUDIT SITE INTERNET — garagegpcars.be
-## Document de travail pour François — Intégration des agents IA GP-CARS
+# BRIEF TECHNIQUE COMPLET — garagegpcars.be
+## Pour François — Agence web · Accès administrateur complet
 
-**Préparé par :** Agent IA (contexte projet GP-CARS)  
-**Date :** Juin 2026  
-**Destinataire :** François (responsable site internet)  
-**Priorité :** Haute — prerequis pour le lancement des agents
-
----
-
-## 1. ÉTAT ACTUEL DU SITE
-
-### Ce que nous savons du site actuel
-
-**URL officielle :** https://garagegpcars.be/
-
-**Pages identifiées :**
-| Page | URL | Description |
-|------|-----|-------------|
-| Accueil | `/` | Page principale du garage |
-| Véhicules | `/nos-vehicules/` | Catalogue des voitures disponibles |
-| Contact | `/contactez-nous/` et `/contact` | Formulaire de contact |
-
-**Informations affichées actuellement :**
-- Adresse : Avenue de la Résistance 506, 4630 Soumagne
-- Téléphone Michael : +32 (0)498 77 36 11
-- Téléphone Francisco : +32 (0)496 76 95 86
-- Email : info.gpcars@gmail.com
-- Horaires : Lundi–Vendredi 8h30–18h00
-- Services : véhicules sélectionnés, garantie 1 an minimum, reprise, financement sur place
-
-**Présence externe détectée :**
-- AutoScout24 : https://www.autoscout24.be/fr/professional/gp-cars-soumagne
-- Golden Pages : fiche entreprise listée
-- Bolid.be : fiche garage avec avis
-- Facebook : GPcars.be
-
-**Type de CMS probable :** WordPress (structure d'URLs `/nos-vehicules/`, `/contactez-nous/` avec slashes finaux = permaliens WordPress typiques)
-
-> **⚠️ Important pour François :** Confirme le CMS utilisé (WordPress, Wix, Webflow, autre?) car les instructions d'intégration ci-dessous varient selon la plateforme.
+**Client :** GP-CARS Associés · Avenue de la Résistance 506 · 4630 Soumagne  
+**Contact client :** Michael +32498773611 · Francisco +32496769586  
+**Email client :** info.gpcars@gmail.com  
+**Date :** Juin 2026
 
 ---
 
-## 2. CE QUI DOIT ÊTRE MODIFIÉ
+## CONTEXTE
 
-### 2.1 Priorité CRITIQUE — Widget MADORE (chat IA commercial)
+GP-CARS a développé une plateforme IA complète déployée sur Vercel (Next.js 14).  
+Cette plateforme contient **5 agents IA** qui doivent être connectés au site `garagegpcars.be`.
 
-**Qu'est-ce que MADORE ?**  
-MADORE est l'agent commercial IA de GP-CARS. Un visiteur du site peut discuter avec lui 24h/24 comme avec un vrai conseiller. MADORE connaît le stock en temps réel et qualifie automatiquement les prospects.
+**François doit :**
+1. Intégrer le widget chat MADORE sur le site existant
+2. Moderniser le site pour qu'il reflète le niveau de la plateforme IA
+3. Connecter les pages du site à la plateforme back-office
 
-**Résultat attendu :** Un bouton de chat flottant (bas-droite de toutes les pages) qui ouvre une conversation avec MADORE.
+**Ce document contient tout le code nécessaire — copier-coller direct.**
 
-**Comment l'intégrer :**
+---
 
-**Option A — Iframe popup (la plus simple, recommandée)**
+## ARCHITECTURE GP-CARS (comprendre avant de modifier)
 
-Ajouter ce code dans le footer de TOUTES les pages du site (avant `</body>`) :
+```
+garagegpcars.be              ←  site public (François gère)
+       │
+       ├── Widget MADORE ────→  [URL-VERCEL]/madore        (chat prospect)
+       ├── Lien stock ────────→  [URL-VERCEL]/madore        (via MADORE)
+       └── Contact ───────────→  info.gpcars@gmail.com
+
+[URL-VERCEL] = URL Vercel fournie par Michael/Francisco
+       │
+       ├── /madore            Agent commercial public (MADORE)
+       ├── /carmelo           Agent achat privé (Carmelo) 
+       ├── /gp/stock          Gestion stock (privé)
+       ├── /gp/leads          Leads MADORE (privé)
+       ├── /gp/dashboard      Analytics (privé)
+       └── /gp/training       Formation agents (privé)
+```
+
+**Note sur la sécurité :** `/madore` est la SEULE page publique. Toutes les autres pages nécessitent un compte GP-CARS.
+
+---
+
+## ÉTAPE 1 — RÉCUPÉRER L'URL VERCEL
+
+Avant tout, demander à Michael ou Francisco l'URL exacte de leur plateforme Vercel.  
+Format : `https://quelquechose.vercel.app` ou un domaine personnalisé.
+
+**Dans tout ce document, remplacer `[URL-VERCEL]` par cette URL.**
+
+Tester que ça marche : ouvrir `[URL-VERCEL]/madore` dans le navigateur → vous devez voir le chat MADORE.
+
+---
+
+## INTÉGRATION 1 — WIDGET CHAT MADORE (PRIORITÉ ABSOLUE)
+
+### Ce que c'est
+Un bouton flottant en bas à droite de toutes les pages du site. Au clic, un panneau de chat s'ouvre. Le visiteur parle directement avec MADORE, l'agent commercial IA de GP-CARS, qui connaît le stock en temps réel.
+
+### Code complet à ajouter dans le `<head>` ou avant `</body>` de toutes les pages
 
 ```html
-<!-- Widget MADORE GP-CARS -->
+<!-- ═══════════════════════════════════════════════════════
+     WIDGET MADORE — Agent commercial IA GP-CARS
+     Version 1.0 — Juin 2026
+     Remplacer [URL-VERCEL] par l'URL réelle de la plateforme
+     ═══════════════════════════════════════════════════════ -->
 <style>
-  #madore-btn {
+  /* Bouton flottant */
+  #gpcars-madore-btn {
     position: fixed;
     bottom: 24px;
     right: 24px;
-    width: 60px;
-    height: 60px;
-    background: #000;
+    width: 64px;
+    height: 64px;
+    background: #111;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     z-index: 9999;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-    border: 2px solid #fff;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.35), 0 0 0 3px #fff;
+    transition: transform 0.2s, box-shadow 0.2s;
+    border: none;
+    outline: none;
   }
-  #madore-btn svg { width: 28px; height: 28px; fill: white; }
-  #madore-popup {
+  #gpcars-madore-btn:hover {
+    transform: scale(1.08);
+    box-shadow: 0 6px 32px rgba(0,0,0,0.45), 0 0 0 3px #fff;
+  }
+  #gpcars-madore-btn svg {
+    width: 30px;
+    height: 30px;
+    fill: white;
+  }
+
+  /* Badge notification */
+  #gpcars-madore-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 20px;
+    height: 20px;
+    background: #dc2626;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    display: none;
+  }
+
+  /* Panneau de chat */
+  #gpcars-madore-panel {
     position: fixed;
-    bottom: 96px;
+    bottom: 100px;
     right: 24px;
-    width: 380px;
-    height: 600px;
-    border-radius: 16px;
+    width: 390px;
+    height: 620px;
+    background: #09090b;
+    border-radius: 20px;
     overflow: hidden;
-    box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+    box-shadow: 0 12px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.1);
     z-index: 9998;
     display: none;
-    border: 1px solid #333;
+    transition: opacity 0.2s, transform 0.2s;
+    transform-origin: bottom right;
   }
-  #madore-popup iframe {
+  #gpcars-madore-panel.open {
+    display: block;
+    animation: madore-open 0.2s ease-out;
+  }
+  @keyframes madore-open {
+    from { opacity: 0; transform: scale(0.92); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  #gpcars-madore-panel iframe {
     width: 100%;
     height: 100%;
     border: none;
+    display: block;
   }
-  @media (max-width: 480px) {
-    #madore-popup { width: calc(100vw - 16px); right: 8px; height: 70vh; }
+
+  /* Bouton fermer */
+  #gpcars-madore-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 28px;
+    height: 28px;
+    background: rgba(255,255,255,0.1);
+    border: none;
+    border-radius: 50%;
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+  #gpcars-madore-close:hover { background: rgba(255,255,255,0.2); }
+
+  /* Responsive mobile */
+  @media (max-width: 500px) {
+    #gpcars-madore-panel {
+      width: 100%;
+      height: 85vh;
+      bottom: 0;
+      right: 0;
+      border-radius: 20px 20px 0 0;
+    }
+    #gpcars-madore-btn { bottom: 16px; right: 16px; }
   }
 </style>
 
-<div id="madore-btn" onclick="toggleMadore()" title="Parler à MADORE, conseiller GP-CARS">
+<!-- Bouton flottant -->
+<button id="gpcars-madore-btn" onclick="gpcarsToggleMadore()" title="Parler à MADORE — Conseiller GP-CARS" aria-label="Ouvrir le chat avec MADORE">
+  <div id="gpcars-madore-badge"></div>
   <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
     <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
   </svg>
-</div>
+</button>
 
-<div id="madore-popup">
-  <iframe id="madore-frame" src="" allow="microphone" loading="lazy"></iframe>
+<!-- Panneau chat -->
+<div id="gpcars-madore-panel">
+  <button id="gpcars-madore-close" onclick="gpcarsToggleMadore()" aria-label="Fermer">✕</button>
+  <iframe id="gpcars-madore-frame" src="" allow="clipboard-read; clipboard-write" loading="lazy" title="MADORE — Conseiller GP-CARS"></iframe>
 </div>
 
 <script>
-  var madoreOpen = false;
-  var madoreLoaded = false;
-  function toggleMadore() {
-    madoreOpen = !madoreOpen;
-    var popup = document.getElementById('madore-popup');
-    popup.style.display = madoreOpen ? 'block' : 'none';
-    if (madoreOpen && !madoreLoaded) {
-      document.getElementById('madore-frame').src = 'https://autooccasion-app.vercel.app/madore';
-      madoreLoaded = true;
-    }
-  }
+  (function() {
+    var MADORE_URL = '[URL-VERCEL]/madore';
+    var isOpen = false;
+    var isLoaded = false;
+
+    window.gpcarsToggleMadore = function() {
+      isOpen = !isOpen;
+      var panel = document.getElementById('gpcars-madore-panel');
+      var badge = document.getElementById('gpcars-madore-badge');
+
+      if (isOpen) {
+        panel.style.display = 'block';
+        setTimeout(function() { panel.classList.add('open'); }, 10);
+        badge.style.display = 'none';
+        if (!isLoaded) {
+          document.getElementById('gpcars-madore-frame').src = MADORE_URL;
+          isLoaded = true;
+        }
+      } else {
+        panel.classList.remove('open');
+        setTimeout(function() { panel.style.display = 'none'; }, 200);
+      }
+    };
+
+    // Afficher badge après 30 secondes si pas encore ouvert
+    setTimeout(function() {
+      if (!isOpen) {
+        document.getElementById('gpcars-madore-badge').style.display = 'block';
+      }
+    }, 30000);
+  })();
 </script>
-<!-- Fin Widget MADORE -->
+<!-- FIN WIDGET MADORE GP-CARS -->
 ```
 
-> **⚠️ Remplacer `https://autooccasion-app.vercel.app`** par l'URL Vercel réelle du projet (Francisco/Michael peuvent la trouver dans leur dashboard Vercel).
+### Instructions par CMS
 
-**Option B — Lien direct (temporaire, en attendant l'iframe)**
+**WordPress :**
+- Option A (recommandée) : installer le plugin **WPCode** (gratuit) → Code Snippets → Add Snippet → "Footer" → coller le code → Activer
+- Option B : Apparence → Éditeur de thème → `footer.php` → coller avant `</body>`
+- Option C : si thème avec hooks : `functions.php` → `add_action('wp_footer', function() { ?> [code ici] <?php });`
 
-Ajouter un bouton dans le menu de navigation et dans la page contact :
+**Webflow :**
+- Project Settings → Custom Code → Footer Code → coller → Publier
 
-```html
-<a href="https://autooccasion-app.vercel.app/madore" target="_blank" 
-   style="background:#000; color:#fff; padding:10px 20px; border-radius:8px; font-weight:bold; text-decoration:none;">
-  💬 Parler à MADORE — Conseiller en ligne
-</a>
-```
+**Wix :**
+- Paramètres → Paramètres avancés → Code personnalisé → Fin du corps → coller
+
+**Squarespace :**
+- Paramètres → Avancé → Injection de code → Pied de page → coller
 
 ---
 
-### 2.2 Priorité HAUTE — Bouton "Demander une analyse" sur les fiches véhicules
+## INTÉGRATION 2 — PAGE CONTACT
 
-Sur la page `/nos-vehicules/` et chaque fiche de véhicule, ajouter un bouton qui ouvre MADORE avec un contexte pré-rempli :
+### Objectif
+Proposer MADORE comme première option avant le formulaire email. Réponse instantanée 24h/24.
+
+### Bloc HTML à insérer EN HAUT de la page `/contactez-nous/`
 
 ```html
-<a href="https://autooccasion-app.vercel.app/madore?ref=site" 
-   target="_blank"
-   style="...">
-  💬 Je suis intéressé — Parler à MADORE
-</a>
-```
+<div style="
+  background: #0a0a0a;
+  border: 2px solid #222;
+  border-radius: 14px;
+  padding: 28px 24px;
+  margin-bottom: 32px;
+  text-align: center;
+  font-family: inherit;
+">
+  <div style="
+    display: inline-block;
+    background: #16a34a;
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border-radius: 20px;
+    margin-bottom: 12px;
+  ">● Disponible maintenant</div>
 
-Cela permet à un visiteur qui regarde un véhicule de démarrer immédiatement une conversation commerciale.
-
----
-
-### 2.3 Priorité HAUTE — Page de contact : remplacer ou compléter le formulaire
-
-**Situation actuelle :** formulaire de contact classique (email)  
-**Cible :** rediriger vers MADORE pour une réponse instantanée 24h/24
-
-**Modifications à apporter sur `/contactez-nous/` :**
-
-1. **Ajouter au-dessus du formulaire existant :**
-```html
-<div style="background:#f9f9f9; border:2px solid #000; border-radius:12px; padding:24px; margin-bottom:32px; text-align:center;">
-  <h3 style="margin:0 0 8px;">Réponse instantanée — 24h/24</h3>
-  <p style="color:#555; margin:0 0 16px;">MADORE, notre conseiller en ligne, peut répondre à toutes vos questions maintenant.</p>
-  <a href="https://autooccasion-app.vercel.app/madore" target="_blank" 
-     style="background:#000; color:#fff; padding:12px 24px; border-radius:8px; font-weight:bold; text-decoration:none; display:inline-block;">
-    Démarrer une conversation avec MADORE →
+  <h3 style="color: #fff; font-size: 20px; margin: 0 0 8px; font-weight: 700;">
+    Réponse instantanée avec MADORE
+  </h3>
+  <p style="color: #999; font-size: 14px; margin: 0 0 20px; line-height: 1.5;">
+    Notre conseiller en ligne connaît notre stock et peut répondre à toutes vos questions 
+    immédiatement — 24h/24, 7j/7.
+  </p>
+  <a href="[URL-VERCEL]/madore" target="_blank" rel="noopener" style="
+    display: inline-block;
+    background: white;
+    color: black;
+    font-weight: 700;
+    font-size: 15px;
+    padding: 14px 28px;
+    border-radius: 10px;
+    text-decoration: none;
+    transition: background 0.15s;
+  ">
+    Démarrer une conversation →
   </a>
+  <p style="color: #555; font-size: 12px; margin: 16px 0 0;">
+    Aucune inscription requise · Réponse en quelques secondes
+  </p>
 </div>
 
-<p style="text-align:center; color:#888; font-size:14px;">— ou envoyez-nous un message via le formulaire ci-dessous —</p>
+<p style="text-align:center; color:#888; font-size:13px; margin-bottom:20px;">
+  ── ou envoyez-nous un message par email ci-dessous ──
+</p>
 ```
 
-2. **Garder le formulaire email existant** comme alternative pour ceux qui préfèrent.
-
 ---
 
-### 2.4 Priorité MOYENNE — Page d'accueil : modernisation et call-to-action
+## INTÉGRATION 3 — PAGE VÉHICULES `/nos-vehicules/`
 
-**Modifications recommandées sur la page d'accueil (`/`) :**
+### Bouton "Je suis intéressé" sur chaque fiche
 
-**A. Section hero / bannière principale**
-- Ajouter une phrase courte sur MADORE : *"Notre conseiller en ligne vous aide à trouver le bon véhicule"*
-- Bouton CTA visible : "Parler à notre conseiller →"
+Sur chaque fiche véhicule ou dans la sidebar, ajouter :
 
-**B. Section "Nos services" — ajouter un bloc MADORE :**
-```
-🤖 Conseiller en ligne 24h/24
-Parlez directement avec MADORE, notre agent commercial IA. 
-Il connaît notre stock, répond à vos questions et vous aide 
-à trouver le bon véhicule selon votre budget.
-[Démarrer une conversation]
-```
-
-**C. Ajouter les avis clients** (Google, Facebook) si pas déjà présents — ça renforce la confiance avant de démarrer un chat avec un agent IA.
-
----
-
-### 2.5 Priorité BASSE — Synchronisation du stock
-
-**Situation actuelle :** le stock est visible sur `/nos-vehicules/` et sur AutoScout24 (affiché séparément)  
-**Cible à terme :** que le stock de `garagegpcars.be` soit alimenté depuis la plateforme GP-CARS (Vercel)
-
-**Note :** Cette intégration est plus technique et doit être planifiée avec Michael/Francisco. Elle n'est pas obligatoire pour le lancement de MADORE.
-
-Options possibles :
-1. **Export manuel** : François exporte le stock depuis la plateforme GP-CARS en CSV et l'importe dans le CMS du site — faisable tous les jours ou toutes les semaines
-2. **API automatique** : la plateforme GP-CARS expose une API publique `/api/stock/public` que le site appelle pour afficher le stock en temps réel (développement nécessaire, ~2-3h)
-3. **Redirection** : supprimer `/nos-vehicules/` du site et rediriger vers la plateforme ou AutoScout24
-
----
-
-## 3. MODIFICATIONS SPÉCIFIQUES SELON LE CMS
-
-### Si le site est sous WordPress
-
-**Pour le widget MADORE :**
-1. Admin WP → Apparence → Éditeur de thème → `footer.php`
-2. Coller le code widget MADORE juste avant `</body>`
-3. Sauvegarder
-
-**Ou utiliser un plugin :**
-- Admin WP → Extensions → Ajouter → chercher "Insert Headers and Footers" ou "WPCode"
-- Coller le code dans la section "Footer Scripts"
-- Avantage : survit aux mises à jour du thème
-
-**Pour les boutons sur les fiches véhicules :**
-- Utiliser l'éditeur de blocs Gutenberg : ajouter un bloc "HTML personnalisé" avec le bouton
-- Ou modifier le template de page véhicule dans le thème
-
-**Pour la page contact :**
-- Éditer la page directement dans Gutenberg
-- Ajouter un bloc HTML avant le formulaire existant
-
-### Si le site est sous Wix / Squarespace / autre
-
-Me contacter pour les instructions spécifiques à la plateforme utilisée.
-
-### Si le site est sous Webflow
-
-1. Paramètres du projet → Intégrations personnalisées → Code de pied de page
-2. Coller le code widget MADORE
-3. Publier
-
----
-
-## 4. CHECKLIST D'INTÉGRATION POUR FRANÇOIS
-
-```
-ÉTAPE 1 — PRÉPARATION (15 min)
-□ Confirmer le CMS utilisé pour le site
-□ Récupérer l'URL Vercel de la plateforme GP-CARS auprès de Michael/Francisco
-□ Remplacer "autooccasion-app.vercel.app" par l'URL réelle dans tous les codes ci-dessus
-□ Tester que l'URL https://[url-vercel]/madore fonctionne dans le navigateur
-
-ÉTAPE 2 — WIDGET CHAT (30 min)
-□ Ajouter le code widget MADORE dans le footer du site (toutes les pages)
-□ Vérifier que le bouton flottant apparaît sur mobile ET desktop
-□ Tester qu'une conversation avec MADORE démarre correctement
-□ Vérifier que le chat fonctionne sur la page accueil, véhicules et contact
-
-ÉTAPE 3 — PAGE CONTACT (20 min)
-□ Ajouter le bloc "Réponse instantanée MADORE" avant le formulaire
-□ Vérifier que le lien vers MADORE fonctionne
-□ Garder le formulaire email existant en dessous
-
-ÉTAPE 4 — PAGE VÉHICULES (20 min)
-□ Ajouter le bouton "Je suis intéressé — Parler à MADORE" sur chaque fiche
-□ Ou l'ajouter globalement dans le template de liste
-
-ÉTAPE 5 — PAGE ACCUEIL (30 min)
-□ Ajouter la mention MADORE dans la section services
-□ Ajouter un CTA visible vers le chat
-□ Vérifier le rendu sur mobile (test responsive)
-
-ÉTAPE 6 — TESTS FINAUX (30 min)
-□ Tester sur mobile (iPhone + Android)
-□ Tester sur tablette
-□ Tester sur desktop
-□ Démarrer une vraie conversation avec MADORE depuis chaque page modifiée
-□ Vérifier que les leads apparaissent dans la plateforme GP-CARS (/gp/leads)
+```html
+<div style="
+  border: 1.5px solid #111;
+  border-radius: 12px;
+  padding: 20px;
+  margin-top: 16px;
+  background: #fafafa;
+  text-align: center;
+">
+  <p style="font-size: 13px; color: #555; margin: 0 0 12px;">
+    Des questions sur ce véhicule ?
+  </p>
+  <a href="[URL-VERCEL]/madore" target="_blank" rel="noopener" style="
+    display: inline-block;
+    background: #111;
+    color: white;
+    font-weight: 700;
+    font-size: 14px;
+    padding: 12px 22px;
+    border-radius: 9px;
+    text-decoration: none;
+  ">
+    💬 Parler à notre conseiller
+  </a>
+  <p style="font-size: 11px; color: #999; margin: 10px 0 0;">
+    Réponse instantanée · Disponible 24h/24
+  </p>
+</div>
 ```
 
-**Durée estimée totale : ~2h30 à 3h**
+### Bannière globale en haut de la liste des véhicules
+
+```html
+<div style="
+  background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+  color: white;
+  border-radius: 14px;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+">
+  <div>
+    <p style="margin:0; font-weight:700; font-size:15px;">MADORE — Conseiller en ligne GP-CARS</p>
+    <p style="margin:4px 0 0; font-size:13px; color:#aaa;">
+      Trouvez le véhicule qui vous correspond · Budget · Financement · Reprise
+    </p>
+  </div>
+  <a href="[URL-VERCEL]/madore" target="_blank" rel="noopener" style="
+    background: white;
+    color: black;
+    font-weight: 700;
+    font-size: 13px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    text-decoration: none;
+    white-space: nowrap;
+    flex-shrink: 0;
+  ">
+    Je cherche un véhicule →
+  </a>
+</div>
+```
 
 ---
 
-## 5. CE QU'IL NE FAUT PAS TOUCHER
+## INTÉGRATION 4 — PAGE D'ACCUEIL
 
-- Les fiches véhicules existantes sur AutoScout24 → MADORE peut y faire référence mais ne pas les remplacer
-- Le formulaire de contact existant → le garder en complément de MADORE
-- Le référencement SEO actuel → ne pas changer les URLs existantes
+### Bloc service à ajouter dans la section "Nos services" ou "Pourquoi nous choisir"
+
+```html
+<div style="
+  border: 1.5px solid #e5e5e5;
+  border-radius: 14px;
+  padding: 24px;
+  text-align: center;
+  max-width: 320px;
+">
+  <div style="font-size: 40px; margin-bottom: 12px;">🤖</div>
+  <h3 style="font-size: 16px; font-weight: 700; margin: 0 0 8px; color: #111;">
+    Conseiller en ligne 24h/24
+  </h3>
+  <p style="font-size: 13px; color: #666; line-height: 1.5; margin: 0 0 16px;">
+    MADORE, notre assistant IA, connaît notre stock et peut vous aider à trouver 
+    le bon véhicule selon votre budget — immédiatement, à toute heure.
+  </p>
+  <a href="[URL-VERCEL]/madore" target="_blank" rel="noopener" style="
+    display: inline-block;
+    background: #111;
+    color: white;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 10px 18px;
+    border-radius: 8px;
+    text-decoration: none;
+  ">
+    Démarrer une conversation
+  </a>
+</div>
+```
+
+### CTA dans le hero / bannière principale
+
+Ajouter un bouton secondaire à côté du CTA principal existant :
+
+```html
+<a href="[URL-VERCEL]/madore" target="_blank" rel="noopener" style="
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  color: white;
+  border: 2px solid white;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 12px 22px;
+  border-radius: 10px;
+  text-decoration: none;
+  margin-left: 12px;
+">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
+  </svg>
+  Conseiller en ligne
+</a>
+```
 
 ---
 
-## 6. CE QUE MADORE FAIT AUTOMATIQUEMENT (sans action de François)
+## INTÉGRATION 5 — MENU DE NAVIGATION
 
-Une fois le widget installé, MADORE fonctionne seul :
+Ajouter un lien "💬 Conseiller" dans la navigation principale du site, qui pointe vers MADORE :
 
-| Action | Automatique |
-|--------|-------------|
-| Répondre aux visiteurs 24h/24 | ✓ |
+```html
+<a href="[URL-VERCEL]/madore" target="_blank" rel="noopener"
+   style="color: inherit; text-decoration: none; font-weight: 600;">
+  💬 Conseiller en ligne
+</a>
+```
+
+Ou avec style visuel distinctif :
+
+```html
+<a href="[URL-VERCEL]/madore" target="_blank" rel="noopener" style="
+  background: #111;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+">
+  💬 Conseiller IA
+</a>
+```
+
+---
+
+## CHECKLIST COMPLÈTE — ORDRE D'EXÉCUTION
+
+```
+PRÉPARATION (10 min)
+□ Confirmer l'URL Vercel avec Michael/Francisco
+□ Tester [URL-VERCEL]/madore dans le navigateur (le chat doit s'ouvrir)
+□ Remplacer [URL-VERCEL] dans tous les codes ci-dessus
+
+WIDGET GLOBAL (30 min) ← PRIORITÉ 1
+□ Ajouter le code "Widget MADORE" dans le footer de TOUTES les pages
+□ Tester sur accueil : bouton flottant visible en bas à droite ?
+□ Tester au clic : le panneau s'ouvre avec le chat ?
+□ Tester sur mobile : le panneau prend toute la largeur ?
+□ Démarrer une vraie conversation de test
+
+PAGE CONTACT (20 min) ← PRIORITÉ 2
+□ Ajouter le bloc "Réponse instantanée" EN HAUT de /contactez-nous/
+□ Vérifier que le bouton "Démarrer une conversation" fonctionne
+□ Garder le formulaire email existant EN DESSOUS
+
+PAGE VÉHICULES (30 min) ← PRIORITÉ 3  
+□ Ajouter la bannière MADORE en haut de la liste /nos-vehicules/
+□ Ajouter le bouton "Parler à notre conseiller" sur au moins 3 fiches véhicule
+□ Idéalement : ajouter le bouton sur TOUTES les fiches (template)
+
+PAGE ACCUEIL (20 min) ← PRIORITÉ 4
+□ Ajouter le bloc "Conseiller en ligne 24h/24" dans la section services
+□ Ajouter le bouton secondaire dans le hero (si le design le permet)
+
+NAVIGATION (10 min) ← PRIORITÉ 5
+□ Ajouter le lien "Conseiller en ligne" dans le menu principal
+
+TESTS FINAUX (20 min)
+□ Tester TOUT sur iPhone (Safari)
+□ Tester TOUT sur Android (Chrome)
+□ Tester TOUT sur desktop (Chrome)
+□ Démarrer une conversation complète depuis le site : MADORE répond ?
+□ Vérifier dans la plateforme GP-CARS (/gp/leads) que le lead apparaît
+
+TOTAL ESTIMÉ : ~2 heures de travail
+```
+
+---
+
+## MODERNISATION DU SITE (recommandations complémentaires)
+
+Ces modifications améliorent l'image globale du garage et la cohérence avec la plateforme IA.
+
+### Visuels & Design
+- Ajouter des **photos de l'équipe** (Michael et Francisco) → humanise et rassure avant le chat IA
+- Section **avis clients Google** intégrée (plugin ou widget Google Reviews)
+- **Badge "Conseiller IA disponible 24h/24"** dans le header ou hero
+- Footer : ajouter les horaires structurés (lundi-vendredi 8h30-18h, samedi sur RDV si applicable)
+
+### SEO & Performance
+- Balise méta description sur toutes les pages (si pas déjà fait)
+- Titre de page optimisé : "GP-CARS · Véhicules d'occasion Soumagne · Garantie 1 an"
+- Ajouter Schema.org `LocalBusiness` et `AutoDealer` dans le code HTML (améliore Google Maps)
+
+```json
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "AutoDealer",
+  "name": "GP-CARS Associés",
+  "url": "https://garagegpcars.be",
+  "telephone": "+32498773611",
+  "email": "info.gpcars@gmail.com",
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": "Avenue de la Résistance 506",
+    "addressLocality": "Soumagne",
+    "postalCode": "4630",
+    "addressCountry": "BE"
+  },
+  "openingHoursSpecification": [
+    {
+      "@type": "OpeningHoursSpecification",
+      "dayOfWeek": ["Monday","Tuesday","Wednesday","Thursday","Friday"],
+      "opens": "08:30",
+      "closes": "18:00"
+    }
+  ],
+  "priceRange": "€€"
+}
+</script>
+```
+
+### Page "Nos véhicules" — améliorations optionnelles
+- Filtre par budget (slider ou tranches : <10k / 10-15k / 15-20k / +20k)
+- Badge "Garantie 1 an" visible sur chaque fiche
+- CTA de reprise : "Vous avez un véhicule à reprendre ? Estimez maintenant →" (lien vers MADORE)
+
+---
+
+## CE QU'IL NE FAUT PAS MODIFIER
+
+| Élément | Raison |
+|---------|--------|
+| URLs existantes (`/nos-vehicules/`, `/contactez-nous/`) | SEO — ne pas changer les slugs |
+| Formulaire email actuel | Le garder comme alternative à MADORE |
+| Numéros de téléphone affichés | Toujours cliquables en mobile (`tel:`) |
+| Adresse affichée | Doit rester cohérente avec Google Maps |
+
+---
+
+## CE QUE MADORE FAIT SEUL (sans configuration supplémentaire)
+
+Une fois le widget installé, tout ce qui suit est **automatique** :
+
+| Fonctionnalité | Automatique |
+|---------------|-------------|
+| Répondre aux prospects 24h/24 | ✓ |
 | Connaître le stock GP-CARS en temps réel | ✓ |
-| Qualifier les prospects (score 0-100) | ✓ |
-| Envoyer une alerte email à info.gpcars@gmail.com pour les leads chauds | ✓ |
-| Sauvegarder les conversations dans la plateforme | ✓ |
-| Proposer les bons véhicules selon le budget du visiteur | ✓ |
+| Proposer les bons véhicules selon le budget | ✓ |
+| Demander le téléphone et l'email du prospect | ✓ |
+| Qualifier le lead (score 0-100, priorité ROUGE/ORANGE/VERT) | ✓ |
+| Sauvegarder la conversation en base de données | ✓ |
+| Alerter Michael/Francisco par email pour les leads chauds | ✓ |
+| Gérer les questions sur le financement, reprise, garantie | ✓ |
+
+**Michael et Francisco voient tous les leads dans :** `[URL-VERCEL]/gp/leads`
 
 ---
 
-## 7. QUESTIONS À POSER À MICHAEL / FRANCISCO
+## QUESTIONS À POSER À MICHAEL / FRANCISCO AVANT DE COMMENCER
 
-Avant de commencer, François doit confirmer ces points :
-
-1. **Quel est le CMS du site ?** (WordPress ? Wix ? Webflow ? autre ?)
-2. **Qui a accès à l'administration du site ?** (identifiants admin nécessaires)
-3. **Quelle est l'URL exacte de la plateforme Vercel ?** (pour configurer les liens)
-4. **Le nom de domaine `garagegpcars.be` — est-il hébergé où ?** (OVH, Combell, autre ?)
-5. **Y a-t-il un thème premium payant sur le site ?** (important pour savoir si on peut modifier le footer sans casser le thème)
+1. **Quelle est l'URL exacte de la plateforme Vercel ?**
+2. **Est-ce qu'on peut aller sur `[URL-VERCEL]/madore` et parler à MADORE ?** (confirmer que c'est en ligne)
+3. **Y a-t-il un accès admin WordPress** (ou autre CMS) pour modifier le footer ?
+4. **Le thème actuel est-il personnalisé** ou un thème premium ? (pour savoir si on peut modifier `footer.php`)
+5. **Des plugins de sécurité bloquent-ils** l'intégration d'iframes externes ? (si oui, ajouter l'URL Vercel en whitelist)
 
 ---
 
-## 8. ÉVOLUTIONS FUTURES (optionnel — post-lancement)
+## EN CAS DE PROBLÈME
 
-Ces modifications ne sont pas nécessaires pour le lancement mais amélioreront l'expérience à terme :
-
-1. **Chat bubble personnalisé** avec photo d'un conseiller GP-CARS au lieu de l'icône générique
-2. **Pré-qualification sur le site** : formulaire rapide (budget, type de véhicule) qui transmet le contexte à MADORE avant d'ouvrir le chat
-3. **Page dédiée "Notre assistant IA"** qui explique MADORE aux visiteurs
-4. **Synchronisation stock automatique** : API entre plateforme GP-CARS et site (nécessite développeur, ~3h)
-5. **Pixel de tracking** : mesurer combien de visiteurs du site ouvrent MADORE et deviennent des leads
-
----
-
-## CONTACT EN CAS DE PROBLÈME
-
-Si François rencontre des difficultés techniques lors de l'intégration :
-- Contacter Michael ou Francisco pour l'URL Vercel et les accès
-- Pour les problèmes de code : rouvrir une session Claude Code avec le détail du problème
-- L'équipe peut aussi créer une page dédiée à l'intégration si nécessaire
+| Problème | Solution |
+|---------|---------|
+| L'iframe ne charge pas | Vérifier que `[URL-VERCEL]` est correct et accessible. Tester l'URL directement. |
+| Le chat s'ouvre mais ne répond pas | Les variables d'environnement Vercel doivent être configurées par Michael/Francisco |
+| Le bouton flottant est caché derrière un autre élément | Augmenter `z-index` dans le CSS (mettre `z-index: 99999`) |
+| Sur mobile, le panneau dépasse de l'écran | Vérifier le CSS responsive (section `@media (max-width: 500px)`) |
+| WordPress bloque le code custom | Utiliser le plugin WPCode (gratuit, fiable, sans risque pour le thème) |
+| Conflit CSS avec le thème | Préfixer toutes les classes avec `gpcars-` (déjà fait dans ce code) |
