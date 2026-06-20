@@ -4,7 +4,7 @@ import { auth } from 'app/auth';
 import {
   createVehicle, getVehicles, getVehicle,
   updateVehicleStatus, recordSale, getVehicleSummaries,
-  updateVehicleFeedback,
+  updateVehicleFeedback, createAtelierIntervention, publishEvent,
   type VehicleStatus,
 } from 'app/db';
 import { assertBody, optionalPositiveInt, optionalString, requirePositiveInt, ValidationError } from '@/lib/validation';
@@ -63,6 +63,19 @@ export async function POST(req: NextRequest) {
         if (Array.isArray(rawBody.platforms)) extra.publishedPlatforms = rawBody.platforms;
       }
       await updateVehicleStatus(id, email, status as VehicleStatus, extra as any);
+
+      if (status === 'achete') {
+        const vehicle = await getVehicle(id, email);
+        const label = vehicle ? `${vehicle.make ?? ''} ${vehicle.model ?? ''}`.trim() : `Véhicule #${id}`;
+        const intervention = await createAtelierIntervention(
+          id, email, 'preparation_vente',
+          `Préparation à la vente — ${label}`,
+        );
+        await publishEvent('atelier.intervention_creee', 'atelier', {
+          vehicleId: id, interventionId: intervention.id, vehicleLabel: label,
+        });
+      }
+
       return NextResponse.json({ ok: true });
     }
 

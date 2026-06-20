@@ -6,7 +6,10 @@ import { genSaltSync, hashSync } from 'bcrypt-ts';
 import { extractDecision } from '@/lib/carmelo/decision';
 import { parseReport } from '@/lib/carmelo/parse';
 import { PLANCHER_FRAIS } from '@/lib/carmelo/config';
-import type { VehicleStatus, AgentDecision, ControllerFlag, VehicleSummary } from '@/lib/agents/shared-types';
+import type {
+  VehicleStatus, AgentDecision, ControllerFlag, VehicleSummary,
+  AtelierInterventionStatus, AtelierInterventionType, PieceStatus, RdvType, RdvStatus,
+} from '@/lib/agents/shared-types';
 
 export { extractDecision };
 export type { VehicleStatus, AgentDecision, VehicleSummary };
@@ -199,6 +202,66 @@ const vehicleEvent = pgTable('VehicleEvent', {
 
 export type VehicleEventRecord = typeof vehicleEvent.$inferSelect;
 
+const atelierIntervention = pgTable('AtelierIntervention', {
+  id:                  serial('id').primaryKey(),
+  vehicleId:           integer('vehicle_id').notNull(),
+  email:               varchar('email', { length: 64 }).notNull(),
+  status:              varchar('status', { length: 16 }).$type<AtelierInterventionStatus>().default('planifie'),
+  type:                varchar('type', { length: 32 }).$type<AtelierInterventionType>().default('preparation_vente'),
+  description:         text('description'),
+  mecanicNotes:        text('mecanic_notes'),
+  estimatedCost:       integer('estimated_cost'),
+  realCost:            integer('real_cost'),
+  estimatedDuration:   integer('estimated_duration'),
+  startDate:           timestamp('start_date'),
+  endDate:             timestamp('end_date'),
+  aiRecommendations:   text('ai_recommendations'),
+  createdAt:           timestamp('created_at').defaultNow(),
+  updatedAt:           timestamp('updated_at').defaultNow(),
+});
+
+export type AtelierInterventionRecord = typeof atelierIntervention.$inferSelect;
+
+const pieceCommande = pgTable('PieceCommande', {
+  id:               serial('id').primaryKey(),
+  interventionId:   integer('intervention_id').notNull(),
+  email:            varchar('email', { length: 64 }).notNull(),
+  pieceName:        varchar('piece_name', { length: 128 }).notNull(),
+  partNumber:       varchar('part_number', { length: 64 }),
+  supplier:         varchar('supplier', { length: 64 }),
+  estimatedPrice:   integer('estimated_price'),
+  realPrice:        integer('real_price'),
+  quantity:         integer('quantity').default(1),
+  status:           varchar('status', { length: 16 }).$type<PieceStatus>().default('a_commander'),
+  orderedAt:        timestamp('ordered_at'),
+  receivedAt:       timestamp('received_at'),
+  supplierMessage:  text('supplier_message'),
+  createdAt:        timestamp('created_at').defaultNow(),
+});
+
+export type PieceCommandeRecord = typeof pieceCommande.$inferSelect;
+
+const rdvAtelier = pgTable('RdvAtelier', {
+  id:              serial('id').primaryKey(),
+  email:           varchar('email', { length: 64 }).notNull(),
+  vehicleId:       integer('vehicle_id'),
+  leadId:          integer('lead_id'),
+  interventionId:  integer('intervention_id'),
+  customerName:    varchar('customer_name', { length: 128 }),
+  customerPhone:   varchar('customer_phone', { length: 32 }),
+  customerEmail:   varchar('customer_email', { length: 128 }),
+  type:            varchar('type', { length: 32 }).$type<RdvType>().notNull(),
+  status:          varchar('status', { length: 16 }).$type<RdvStatus>().default('planifie'),
+  scheduledAt:     timestamp('scheduled_at').notNull(),
+  durationMinutes: integer('duration_minutes').default(60),
+  notes:           text('notes'),
+  reminderSent:    boolean('reminder_sent').default(false),
+  createdAt:       timestamp('created_at').defaultNow(),
+  updatedAt:       timestamp('updated_at').defaultNow(),
+});
+
+export type RdvAtelierRecord = typeof rdvAtelier.$inferSelect;
+
 // ============================================================
 // SINGLE SCHEMA INIT
 // Promise singleton: concurrent requests in the same Node.js process
@@ -360,6 +423,63 @@ function ensureSchema(): Promise<void> {
         lead_id INTEGER,
         priority VARCHAR(16),
         created_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "AtelierIntervention" (
+        id SERIAL PRIMARY KEY,
+        vehicle_id INTEGER NOT NULL,
+        email VARCHAR(64) NOT NULL,
+        status VARCHAR(16) DEFAULT 'planifie',
+        type VARCHAR(32) DEFAULT 'preparation_vente',
+        description TEXT,
+        mecanic_notes TEXT,
+        estimated_cost INTEGER,
+        real_cost INTEGER,
+        estimated_duration INTEGER,
+        start_date TIMESTAMP,
+        end_date TIMESTAMP,
+        ai_recommendations TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "PieceCommande" (
+        id SERIAL PRIMARY KEY,
+        intervention_id INTEGER NOT NULL,
+        email VARCHAR(64) NOT NULL,
+        piece_name VARCHAR(128) NOT NULL,
+        part_number VARCHAR(64),
+        supplier VARCHAR(64),
+        estimated_price INTEGER,
+        real_price INTEGER,
+        quantity INTEGER DEFAULT 1,
+        status VARCHAR(16) DEFAULT 'a_commander',
+        ordered_at TIMESTAMP,
+        received_at TIMESTAMP,
+        supplier_message TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "RdvAtelier" (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(64) NOT NULL,
+        vehicle_id INTEGER,
+        lead_id INTEGER,
+        intervention_id INTEGER,
+        customer_name VARCHAR(128),
+        customer_phone VARCHAR(32),
+        customer_email VARCHAR(128),
+        type VARCHAR(32) NOT NULL,
+        status VARCHAR(16) DEFAULT 'planifie',
+        scheduled_at TIMESTAMP NOT NULL,
+        duration_minutes INTEGER DEFAULT 60,
+        notes TEXT,
+        reminder_sent BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
       )`;
   })();
   return _schemaReady;
@@ -1094,4 +1214,213 @@ export async function buildDemandBlock(): Promise<string> {
   lines.push('→ Priorise les achats qui correspondent à cette demande réelle.');
 
   return lines.join('\n');
+}
+
+// ============================================================
+// ATELIER — interventions mécanique
+// ============================================================
+
+export async function createAtelierIntervention(
+  vehicleId: number,
+  email: string,
+  type: AtelierInterventionType = 'preparation_vente',
+  description?: string | null,
+  aiRecommendations?: string | null,
+): Promise<AtelierInterventionRecord> {
+  await ensureSchema();
+  const rows = await getDb().insert(atelierIntervention).values({
+    vehicleId,
+    email,
+    type,
+    description: description ?? null,
+    aiRecommendations: aiRecommendations ?? null,
+    status: 'planifie',
+  }).returning();
+  return rows[0];
+}
+
+export async function getAtelierInterventions(email: string): Promise<AtelierInterventionRecord[]> {
+  await ensureSchema();
+  return await getDb()
+    .select()
+    .from(atelierIntervention)
+    .where(eq(atelierIntervention.email, email))
+    .orderBy(desc(atelierIntervention.createdAt));
+}
+
+export async function getAtelierIntervention(id: number, email: string): Promise<AtelierInterventionRecord | null> {
+  await ensureSchema();
+  const rows = await getDb()
+    .select()
+    .from(atelierIntervention)
+    .where(and(eq(atelierIntervention.id, id), eq(atelierIntervention.email, email)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateAtelierIntervention(
+  id: number,
+  email: string,
+  updates: Partial<Omit<AtelierInterventionRecord, 'id' | 'email' | 'createdAt'>>,
+): Promise<void> {
+  await ensureSchema();
+  await getDb()
+    .update(atelierIntervention)
+    .set({ ...updates, updatedAt: new Date() })
+    .where(and(eq(atelierIntervention.id, id), eq(atelierIntervention.email, email)));
+}
+
+// ============================================================
+// ATELIER — pièces à commander
+// ============================================================
+
+export async function addPieceCommande(
+  interventionId: number,
+  email: string,
+  piece: {
+    pieceName: string;
+    partNumber?: string | null;
+    supplier?: string | null;
+    estimatedPrice?: number | null;
+    quantity?: number | null;
+    supplierMessage?: string | null;
+  },
+): Promise<PieceCommandeRecord> {
+  await ensureSchema();
+  const rows = await getDb().insert(pieceCommande).values({
+    interventionId,
+    email,
+    pieceName: piece.pieceName,
+    partNumber: piece.partNumber ?? null,
+    supplier: piece.supplier ?? null,
+    estimatedPrice: piece.estimatedPrice ?? null,
+    quantity: piece.quantity ?? 1,
+    supplierMessage: piece.supplierMessage ?? null,
+    status: 'a_commander',
+  }).returning();
+  return rows[0];
+}
+
+export async function getPiecesForIntervention(interventionId: number): Promise<PieceCommandeRecord[]> {
+  await ensureSchema();
+  return await getDb()
+    .select()
+    .from(pieceCommande)
+    .where(eq(pieceCommande.interventionId, interventionId))
+    .orderBy(pieceCommande.createdAt);
+}
+
+export async function getPiecesToOrder(email: string): Promise<PieceCommandeRecord[]> {
+  await ensureSchema();
+  return await getDb()
+    .select()
+    .from(pieceCommande)
+    .where(and(eq(pieceCommande.email, email), eq(pieceCommande.status, 'a_commander')))
+    .orderBy(pieceCommande.createdAt);
+}
+
+export async function updatePieceStatus(id: number, email: string, status: PieceStatus): Promise<void> {
+  await ensureSchema();
+  const updates: Partial<typeof pieceCommande.$inferInsert> = { status };
+  if (status === 'commande') updates.orderedAt = new Date();
+  if (status === 'recu') updates.receivedAt = new Date();
+  await getDb()
+    .update(pieceCommande)
+    .set(updates)
+    .where(and(eq(pieceCommande.id, id), eq(pieceCommande.email, email)));
+}
+
+// ============================================================
+// ATELIER — rendez-vous
+// ============================================================
+
+export async function createRdv(
+  email: string,
+  rdvData: {
+    vehicleId?: number | null;
+    leadId?: number | null;
+    interventionId?: number | null;
+    customerName?: string | null;
+    customerPhone?: string | null;
+    customerEmail?: string | null;
+    type: RdvType;
+    scheduledAt: Date;
+    durationMinutes?: number | null;
+    notes?: string | null;
+  },
+): Promise<RdvAtelierRecord> {
+  await ensureSchema();
+  const rows = await getDb().insert(rdvAtelier).values({
+    email,
+    vehicleId: rdvData.vehicleId ?? null,
+    leadId: rdvData.leadId ?? null,
+    interventionId: rdvData.interventionId ?? null,
+    customerName: rdvData.customerName ?? null,
+    customerPhone: rdvData.customerPhone ?? null,
+    customerEmail: rdvData.customerEmail ?? null,
+    type: rdvData.type,
+    scheduledAt: rdvData.scheduledAt,
+    durationMinutes: rdvData.durationMinutes ?? 60,
+    notes: rdvData.notes ?? null,
+    status: 'planifie',
+    reminderSent: false,
+  }).returning();
+  return rows[0];
+}
+
+export async function getUpcomingRdvs(email: string, days = 14): Promise<RdvAtelierRecord[]> {
+  await ensureSchema();
+  const until = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  const rows = await getClient()`
+    SELECT * FROM "RdvAtelier"
+    WHERE email = ${email}
+      AND status != 'annule'
+      AND scheduled_at >= NOW()
+      AND scheduled_at <= ${until}
+    ORDER BY scheduled_at ASC
+    LIMIT 50
+  `;
+  return rows as RdvAtelierRecord[];
+}
+
+export async function updateRdvStatus(id: number, email: string, status: RdvStatus): Promise<void> {
+  await ensureSchema();
+  await getDb()
+    .update(rdvAtelier)
+    .set({ status, updatedAt: new Date() })
+    .where(and(eq(rdvAtelier.id, id), eq(rdvAtelier.email, email)));
+}
+
+export async function getAtelierStats(email: string): Promise<{
+  enCours: number;
+  planifie: number;
+  termine: number;
+  facture: number;
+  piecesACommander: number;
+  rdvsThisWeek: number;
+}> {
+  await ensureSchema();
+  const now = new Date();
+  const weekEnd = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  const [interventions, pieces, rdvs] = await Promise.all([
+    getAtelierInterventions(email),
+    getPiecesToOrder(email),
+    getClient()`
+      SELECT COUNT(*) as count FROM "RdvAtelier"
+      WHERE email = ${email}
+        AND status != 'annule'
+        AND scheduled_at >= ${now}
+        AND scheduled_at <= ${weekEnd}
+    `,
+  ]);
+
+  return {
+    enCours:          interventions.filter(i => i.status === 'en_cours').length,
+    planifie:         interventions.filter(i => i.status === 'planifie').length,
+    termine:          interventions.filter(i => i.status === 'termine').length,
+    facture:          interventions.filter(i => i.status === 'facture').length,
+    piecesACommander: pieces.length,
+    rdvsThisWeek:     Number((rdvs[0] as { count: string }).count),
+  };
 }

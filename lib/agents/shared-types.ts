@@ -21,6 +21,12 @@ export type ControllerFlag = {
   message: string;
 };
 
+export type AtelierInterventionStatus = 'planifie' | 'en_cours' | 'termine' | 'facture';
+export type AtelierInterventionType   = 'revision' | 'reparation' | 'preparation_vente' | 'diagnostic' | 'autre';
+export type PieceStatus               = 'a_commander' | 'commande' | 'recu' | 'monte';
+export type RdvType                   = 'diagnostic' | 'intervention' | 'livraison' | 'reprise_trade_in' | 'essai';
+export type RdvStatus                 = 'planifie' | 'confirme' | 'annule' | 'termine';
+
 // Lightweight vehicle summary passed between agents.
 export type VehicleSummary = {
   id: number;

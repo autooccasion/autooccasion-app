@@ -6,6 +6,7 @@ import { MADORE_CONTRACT }     from '@/lib/agents/madore/contract';
 import { MARKETING_CONTRACT }  from '@/lib/agents/marketing/contract';
 import { CONTROLLER_CONTRACT } from '@/lib/agents/controller/contract';
 import { SCANNER_CONTRACT }    from '@/lib/agents/scanner/contract';
+import { ATELIER_CONTRACT }    from '@/lib/agents/atelier/contract';
 
 export const AGENT_REGISTRY = [
   CARMELO_CONTRACT,
@@ -13,6 +14,7 @@ export const AGENT_REGISTRY = [
   MARKETING_CONTRACT,
   CONTROLLER_CONTRACT,
   SCANNER_CONTRACT,
+  ATELIER_CONTRACT,
 ] as const;
 
 export type RegisteredAgent = typeof AGENT_REGISTRY[number];
