@@ -9,6 +9,7 @@ import { PLANCHER_FRAIS } from '@/lib/carmelo/config';
 import type {
   VehicleStatus, AgentDecision, ControllerFlag, VehicleSummary,
   AtelierInterventionStatus, AtelierInterventionType, PieceStatus, RdvType, RdvStatus,
+  GarantieStatus, GarantieCategory, GarantieCoverage, GarantieDocumentType,
 } from '@/lib/agents/shared-types';
 
 export { extractDecision };
@@ -262,6 +263,94 @@ const rdvAtelier = pgTable('RdvAtelier', {
 
 export type RdvAtelierRecord = typeof rdvAtelier.$inferSelect;
 
+const garantieDossier = pgTable('GarantieDossier', {
+  id:                        serial('id').primaryKey(),
+  email:                     varchar('email', { length: 64 }).notNull(),
+  vehicleId:                 integer('vehicle_id'),
+  vehicleMake:               varchar('vehicle_make', { length: 48 }),
+  vehicleModel:              varchar('vehicle_model', { length: 64 }),
+  vehicleYear:               integer('vehicle_year'),
+  vehicleVin:                varchar('vehicle_vin', { length: 20 }),
+  vehicleKmAtSale:           integer('vehicle_km_at_sale'),
+  vehicleKmNow:              integer('vehicle_km_now'),
+  saleDate:                  timestamp('sale_date'),
+  invoiceNumber:             varchar('invoice_number', { length: 64 }),
+  warrantyDurationMonths:    integer('warranty_duration_months').default(12),
+  customerName:              varchar('customer_name', { length: 128 }),
+  customerPhone:             varchar('customer_phone', { length: 32 }),
+  customerEmail:             varchar('customer_email', { length: 128 }),
+  claimDate:                 timestamp('claim_date').defaultNow(),
+  claimDescription:          text('claim_description'),
+  symptoms:                  text('symptoms'),
+  diagnosis:                 text('diagnosis'),
+  repairsAlreadyDone:        text('repairs_already_done'),
+  usageType:                 varchar('usage_type', { length: 32 }),
+  maintenanceOk:             boolean('maintenance_ok'),
+  category:                  varchar('category', { length: 4 }).$type<GarantieCategory>(),
+  coverageDecision:          varchar('coverage_decision', { length: 16 }).$type<GarantieCoverage>().default('en_attente'),
+  coveragePercent:           integer('coverage_percent'),
+  clientContribution:        integer('client_contribution'),
+  estimatedCost:             integer('estimated_cost'),
+  finalCost:                 integer('final_cost'),
+  riskScoreLegal:            integer('risk_score_legal'),
+  riskScoreFinancial:        integer('risk_score_financial'),
+  litigationProbability:     integer('litigation_probability'),
+  garageSuccessProbability:  integer('garage_success_probability'),
+  confidenceLevel:           integer('confidence_level'),
+  status:                    varchar('status', { length: 16 }).$type<GarantieStatus>().default('nouveau'),
+  aiAnalysis:                text('ai_analysis'),
+  aiRecommendation:          text('ai_recommendation'),
+  aiStrengths:               json('ai_strengths').$type<string[]>(),
+  aiWeaknesses:              json('ai_weaknesses').$type<string[]>(),
+  aiLegalBasis:              json('ai_legal_basis').$type<string[]>(),
+  aiNextSteps:               json('ai_next_steps').$type<string[]>(),
+  communicationEmail:        text('communication_email'),
+  communicationWhatsapp:     text('communication_whatsapp'),
+  communicationRefus:        text('communication_refus'),
+  communicationTransaction:  text('communication_transaction'),
+  litigationPackage:         json('litigation_package').$type<Record<string, unknown>>(),
+  internalNotes:             text('internal_notes'),
+  createdAt:                 timestamp('created_at').defaultNow(),
+  updatedAt:                 timestamp('updated_at').defaultNow(),
+});
+
+export type GarantieDossierRecord = typeof garantieDossier.$inferSelect;
+
+const garantieDocument = pgTable('GarantieDocument', {
+  id:          serial('id').primaryKey(),
+  dossierId:   integer('dossier_id').notNull(),
+  email:       varchar('email', { length: 64 }).notNull(),
+  type:        varchar('type', { length: 32 }).$type<GarantieDocumentType>().notNull(),
+  title:       varchar('title', { length: 128 }).notNull(),
+  description: text('description'),
+  fileUrl:     text('file_url'),
+  addedBy:     varchar('added_by', { length: 16 }).default('garage'),
+  notes:       text('notes'),
+  createdAt:   timestamp('created_at').defaultNow(),
+});
+
+export type GarantieDocumentRecord = typeof garantieDocument.$inferSelect;
+
+const garantiePiece = pgTable('GarantiePiece', {
+  id:                      serial('id').primaryKey(),
+  dossierId:               integer('dossier_id').notNull(),
+  email:                   varchar('email', { length: 64 }).notNull(),
+  pieceName:               varchar('piece_name', { length: 128 }).notNull(),
+  pieceAgeMonths:          integer('piece_age_months'),
+  pieceKm:                 integer('piece_km'),
+  estimatedLifespanMonths: integer('estimated_lifespan_months'),
+  estimatedLifespanKm:     integer('estimated_lifespan_km'),
+  wearPercent:             integer('wear_percent'),
+  coverageDecision:        varchar('coverage_decision', { length: 16 }).$type<GarantieCoverage>(),
+  coveragePercent:         integer('coverage_percent'),
+  estimatedCost:           integer('estimated_cost'),
+  clientContribution:      integer('client_contribution'),
+  justification:           text('justification'),
+  createdAt:               timestamp('created_at').defaultNow(),
+});
+
+export type GarantiePieceRecord = typeof garantiePiece.$inferSelect;
+
 // ============================================================
 // SINGLE SCHEMA INIT
 // Promise singleton: concurrent requests in the same Node.js process
@@ -480,6 +569,66 @@ function ensureSchema(): Promise<void> {
         reminder_sent BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "GarantieDossier" (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(64) NOT NULL,
+        vehicle_id INTEGER,
+        vehicle_make VARCHAR(48), vehicle_model VARCHAR(64), vehicle_year INTEGER, vehicle_vin VARCHAR(20),
+        vehicle_km_at_sale INTEGER, vehicle_km_now INTEGER,
+        sale_date TIMESTAMP,
+        invoice_number VARCHAR(64),
+        warranty_duration_months INTEGER DEFAULT 12,
+        customer_name VARCHAR(128), customer_phone VARCHAR(32), customer_email VARCHAR(128),
+        claim_date TIMESTAMP DEFAULT NOW(),
+        claim_description TEXT, symptoms TEXT, diagnosis TEXT, repairs_already_done TEXT,
+        usage_type VARCHAR(32), maintenance_ok BOOLEAN,
+        category VARCHAR(4),
+        coverage_decision VARCHAR(16) DEFAULT 'en_attente',
+        coverage_percent INTEGER, client_contribution INTEGER,
+        estimated_cost INTEGER, final_cost INTEGER,
+        risk_score_legal INTEGER, risk_score_financial INTEGER,
+        litigation_probability INTEGER, garage_success_probability INTEGER, confidence_level INTEGER,
+        status VARCHAR(16) DEFAULT 'nouveau',
+        ai_analysis TEXT, ai_recommendation TEXT,
+        ai_strengths JSONB, ai_weaknesses JSONB, ai_legal_basis JSONB, ai_next_steps JSONB,
+        communication_email TEXT, communication_whatsapp TEXT,
+        communication_refus TEXT, communication_transaction TEXT,
+        litigation_package JSONB,
+        internal_notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "GarantieDocument" (
+        id SERIAL PRIMARY KEY,
+        dossier_id INTEGER NOT NULL,
+        email VARCHAR(64) NOT NULL,
+        type VARCHAR(32) NOT NULL,
+        title VARCHAR(128) NOT NULL,
+        description TEXT,
+        file_url TEXT,
+        added_by VARCHAR(16) DEFAULT 'garage',
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "GarantiePiece" (
+        id SERIAL PRIMARY KEY,
+        dossier_id INTEGER NOT NULL,
+        email VARCHAR(64) NOT NULL,
+        piece_name VARCHAR(128) NOT NULL,
+        piece_age_months INTEGER, piece_km INTEGER,
+        estimated_lifespan_months INTEGER, estimated_lifespan_km INTEGER,
+        wear_percent INTEGER,
+        coverage_decision VARCHAR(16),
+        coverage_percent INTEGER, estimated_cost INTEGER, client_contribution INTEGER,
+        justification TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
       )`;
   })();
   return _schemaReady;
@@ -1423,4 +1572,194 @@ export async function getAtelierStats(email: string): Promise<{
     piecesACommander: pieces.length,
     rdvsThisWeek:     Number((rdvs[0] as { count: string }).count),
   };
+}
+
+// ============================================================
+// GARANTIE — dossiers SAV & litiges
+// ============================================================
+
+export async function createGarantieDossier(
+  email: string,
+  data: Partial<Omit<GarantieDossierRecord, 'id' | 'email' | 'createdAt' | 'updatedAt'>>,
+): Promise<GarantieDossierRecord> {
+  await ensureSchema();
+  const rows = await getDb().insert(garantieDossier).values({
+    email,
+    vehicleId:              data.vehicleId              ?? null,
+    vehicleMake:            data.vehicleMake            ?? null,
+    vehicleModel:           data.vehicleModel           ?? null,
+    vehicleYear:            data.vehicleYear            ?? null,
+    vehicleVin:             data.vehicleVin             ?? null,
+    vehicleKmAtSale:        data.vehicleKmAtSale        ?? null,
+    vehicleKmNow:           data.vehicleKmNow           ?? null,
+    saleDate:               data.saleDate               ?? null,
+    invoiceNumber:          data.invoiceNumber          ?? null,
+    warrantyDurationMonths: data.warrantyDurationMonths ?? 12,
+    customerName:           data.customerName           ?? null,
+    customerPhone:          data.customerPhone          ?? null,
+    customerEmail:          data.customerEmail          ?? null,
+    claimDate:              data.claimDate              ?? new Date(),
+    claimDescription:       data.claimDescription       ?? null,
+    symptoms:               data.symptoms               ?? null,
+    diagnosis:              data.diagnosis              ?? null,
+    repairsAlreadyDone:     data.repairsAlreadyDone     ?? null,
+    usageType:              data.usageType              ?? null,
+    maintenanceOk:          data.maintenanceOk          ?? null,
+    coverageDecision:       'en_attente',
+    status:                 'nouveau',
+    internalNotes:          data.internalNotes          ?? null,
+  }).returning();
+  return rows[0];
+}
+
+export async function getGarantieDossiers(email: string): Promise<GarantieDossierRecord[]> {
+  await ensureSchema();
+  return await getDb()
+    .select()
+    .from(garantieDossier)
+    .where(eq(garantieDossier.email, email))
+    .orderBy(desc(garantieDossier.createdAt));
+}
+
+export async function getGarantieDossier(id: number, email: string): Promise<GarantieDossierRecord | null> {
+  await ensureSchema();
+  const rows = await getDb()
+    .select()
+    .from(garantieDossier)
+    .where(and(eq(garantieDossier.id, id), eq(garantieDossier.email, email)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateGarantieDossier(
+  id: number,
+  email: string,
+  updates: Partial<Omit<GarantieDossierRecord, 'id' | 'email' | 'createdAt'>>,
+): Promise<void> {
+  await ensureSchema();
+  await getDb()
+    .update(garantieDossier)
+    .set({ ...updates, updatedAt: new Date() })
+    .where(and(eq(garantieDossier.id, id), eq(garantieDossier.email, email)));
+}
+
+// ============================================================
+// GARANTIE — documents archivés
+// ============================================================
+
+export async function addGarantieDocument(
+  dossierId: number,
+  email: string,
+  doc: {
+    type: GarantieDocumentType;
+    title: string;
+    description?: string | null;
+    fileUrl?: string | null;
+    addedBy?: string | null;
+    notes?: string | null;
+  },
+): Promise<GarantieDocumentRecord> {
+  await ensureSchema();
+  const rows = await getDb().insert(garantieDocument).values({
+    dossierId,
+    email,
+    type: doc.type,
+    title: doc.title,
+    description: doc.description ?? null,
+    fileUrl: doc.fileUrl ?? null,
+    addedBy: doc.addedBy ?? 'garage',
+    notes: doc.notes ?? null,
+  }).returning();
+  return rows[0];
+}
+
+export async function getGarantieDocuments(dossierId: number): Promise<GarantieDocumentRecord[]> {
+  await ensureSchema();
+  return await getDb()
+    .select()
+    .from(garantieDocument)
+    .where(eq(garantieDocument.dossierId, dossierId))
+    .orderBy(garantieDocument.createdAt);
+}
+
+// ============================================================
+// GARANTIE — pièces (vétusté)
+// ============================================================
+
+export async function saveGarantiePieces(
+  dossierId: number,
+  email: string,
+  pieces: Array<{
+    pieceName: string;
+    pieceAgeMonths?: number | null;
+    pieceKm?: number | null;
+    estimatedLifespanMonths?: number | null;
+    estimatedLifespanKm?: number | null;
+    wearPercent?: number | null;
+    coverageDecision?: GarantieCoverage | null;
+    coveragePercent?: number | null;
+    estimatedCost?: number | null;
+    clientContribution?: number | null;
+    justification?: string | null;
+  }>,
+): Promise<void> {
+  await ensureSchema();
+  if (pieces.length === 0) return;
+  await getDb().insert(garantiePiece).values(
+    pieces.map(p => ({
+      dossierId,
+      email,
+      pieceName:               p.pieceName,
+      pieceAgeMonths:          p.pieceAgeMonths          ?? null,
+      pieceKm:                 p.pieceKm                 ?? null,
+      estimatedLifespanMonths: p.estimatedLifespanMonths ?? null,
+      estimatedLifespanKm:     p.estimatedLifespanKm     ?? null,
+      wearPercent:             p.wearPercent             ?? null,
+      coverageDecision:        p.coverageDecision        ?? null,
+      coveragePercent:         p.coveragePercent         ?? null,
+      estimatedCost:           p.estimatedCost           ?? null,
+      clientContribution:      p.clientContribution      ?? null,
+      justification:           p.justification           ?? null,
+    }))
+  );
+}
+
+export async function getGarantiePieces(dossierId: number): Promise<GarantiePieceRecord[]> {
+  await ensureSchema();
+  return await getDb()
+    .select()
+    .from(garantiePiece)
+    .where(eq(garantiePiece.dossierId, dossierId))
+    .orderBy(garantiePiece.createdAt);
+}
+
+// ============================================================
+// GARANTIE — statistiques KPI
+// ============================================================
+
+export async function getGarantieStats(email: string): Promise<{
+  total: number;
+  actifs: number;
+  litiges: number;
+  resolus: number;
+  coutTotal: number;
+  coutMoyen: number;
+  tauxPriseEnCharge: number;
+}> {
+  await ensureSchema();
+  const dossiers = await getGarantieDossiers(email);
+  const total    = dossiers.length;
+  const actifs   = dossiers.filter(d => ['nouveau','en_analyse','decision_prise','sav_en_cours'].includes(d.status ?? '')).length;
+  const litiges  = dossiers.filter(d => ['litige','expertise','procedure'].includes(d.status ?? '')).length;
+  const resolus  = dossiers.filter(d => d.status === 'resolu').length;
+
+  const avecCout = dossiers.filter(d => d.finalCost != null);
+  const coutTotal = avecCout.reduce((sum, d) => sum + (d.finalCost ?? 0), 0);
+  const coutMoyen = avecCout.length > 0 ? Math.round(coutTotal / avecCout.length) : 0;
+
+  const prises = dossiers.filter(d => d.coverageDecision === 'totale' || d.coverageDecision === 'partielle').length;
+  const decides = dossiers.filter(d => d.coverageDecision !== 'en_attente').length;
+  const tauxPriseEnCharge = decides > 0 ? Math.round((prises / decides) * 100) : 0;
+
+  return { total, actifs, litiges, resolus, coutTotal, coutMoyen, tauxPriseEnCharge };
 }

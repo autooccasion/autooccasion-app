@@ -21,6 +21,11 @@ export type ControllerFlag = {
   message: string;
 };
 
+export type GarantieStatus       = 'nouveau' | 'en_analyse' | 'decision_prise' | 'sav_en_cours' | 'resolu' | 'litige' | 'expertise' | 'procedure';
+export type GarantieCategory     = '1' | '2' | '3' | '4' | '5' | '6' | '7';
+export type GarantieCoverage     = 'totale' | 'partielle' | 'refusee' | 'en_attente';
+export type GarantieDocumentType = 'email' | 'whatsapp' | 'photo' | 'video' | 'devis' | 'facture' | 'diagnostic' | 'rapport_atelier' | 'expertise' | 'courrier' | 'autre';
+
 export type AtelierInterventionStatus = 'planifie' | 'en_cours' | 'termine' | 'facture';
 export type AtelierInterventionType   = 'revision' | 'reparation' | 'preparation_vente' | 'diagnostic' | 'autre';
 export type PieceStatus               = 'a_commander' | 'commande' | 'recu' | 'monte';
