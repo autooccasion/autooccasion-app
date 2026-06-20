@@ -143,6 +143,7 @@ export default function GarantieClient() {
   const [activeTab, setActiveTab] = useState<Record<number, string>>({});
   const [analyzing, setAnalyzing] = useState<number | null>(null);
   const [sending, setSending] = useState<number | null>(null);
+  const [sendConfirm, setSendConfirm] = useState<{ id: number; type: string } | null>(null);
   const [sendFeedback, setSendFeedback] = useState<Record<number, string>>({});
   const [updatingStatus, setUpdatingStatus] = useState<number | null>(null);
   const [editNotes, setEditNotes] = useState<Record<number, string>>({});
@@ -584,7 +585,7 @@ export default function GarantieClient() {
                         <div key={commKey} className="space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
                             <CopyBtn text={commText} />
-                            {(commKey === 'email' || commKey === 'refus' || commKey === 'transaction') && d.customerEmail && (
+                            {commKey === 'email' && d.customerEmail && (
                               <button
                                 onClick={() => handleSendEmail(d.id, commKey)}
                                 disabled={sending === d.id}
@@ -592,6 +593,38 @@ export default function GarantieClient() {
                               >
                                 {sending === d.id ? 'Envoi...' : `✉ Envoyer à ${d.customerEmail}`}
                               </button>
+                            )}
+                            {(commKey === 'refus' || commKey === 'transaction') && d.customerEmail && (
+                              sendConfirm?.id === d.id && sendConfirm?.type === commKey ? (
+                                <div className="bg-red-950 border border-red-700 rounded-lg p-3 text-sm">
+                                  <p className="text-red-300 font-medium mb-2">⚠️ Confirmation requise</p>
+                                  <p className="text-red-400 text-xs mb-3">
+                                    Cet email engage juridiquement GP-CARS. Vérifiez le texte avant envoi.
+                                  </p>
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => { setSendConfirm(null); handleSendEmail(d.id, commKey); }}
+                                      className="px-3 py-1.5 bg-red-700 hover:bg-red-600 text-white text-xs rounded-lg font-semibold"
+                                    >
+                                      Confirmer l&apos;envoi
+                                    </button>
+                                    <button
+                                      onClick={() => setSendConfirm(null)}
+                                      className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-xs rounded-lg"
+                                    >
+                                      Annuler
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setSendConfirm({ id: d.id, type: commKey })}
+                                  disabled={sending === d.id}
+                                  className="px-3 py-1.5 bg-red-950 hover:bg-red-900 border border-red-800 text-red-300 text-xs rounded-lg font-semibold disabled:opacity-50"
+                                >
+                                  ✉ Envoyer (validation requise)
+                                </button>
+                              )
                             )}
                             {commKey === 'whatsapp' && d.customerPhone && (
                               <span className="text-xs text-zinc-500">Copier puis coller dans WhatsApp ({d.customerPhone})</span>

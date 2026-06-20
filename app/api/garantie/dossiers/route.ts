@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     await updateGarantieDossier(body.id, email, updates as Parameters<typeof updateGarantieDossier>[2]);
 
     if (body.status === 'litige') {
-      await publishEvent('garantie.litige_detecte', 'garantie', { dossierId: body.id });
+      await publishEvent('garantie.litige_detecte', 'garantie', { dossierId: body.id }, email);
     }
     return NextResponse.json({ ok: true });
   }
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
     vehicleMake: dossier.vehicleMake,
     vehicleModel: dossier.vehicleModel,
     customerName: dossier.customerName,
-  });
+  }, email);
 
   return NextResponse.json({ dossier });
 }

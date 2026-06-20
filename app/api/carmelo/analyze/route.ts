@@ -5,7 +5,6 @@ import { fetchListing } from '@/lib/carmelo/fetch-listing';
 import { selectRelevant, buildMemoryBlock, buildStatsBlock } from '@/lib/carmelo/memory';
 import { parseReport } from '@/lib/carmelo/parse';
 import { auth } from 'app/auth';
-import { cookies } from 'next/headers';
 import { saveAnalysis, getVehiclesForMemory, createVehicle, saveControllerResult, getVehicleSummaries } from 'app/db';
 import { computeMakeStats } from '@/lib/agents/analytics';
 import { runHardRules } from '@/lib/agents/controller/system-prompt';
@@ -28,9 +27,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const apiKey =
-    process.env.ANTHROPIC_API_KEY ||
-    cookies().get('gp_api_key')?.value;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
 
   if (!apiKey) {
     return NextResponse.json(

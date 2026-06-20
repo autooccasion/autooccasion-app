@@ -33,7 +33,7 @@ export default async function TrainingPage() {
 
   const [vehicles, leads, analyses] = await Promise.all([
     getVehicles(email, 500).catch(() => []),
-    getLeads(500).catch(() => []),
+    getLeads(email, 500).catch(() => []),
     getAnalyses(email, 500).catch(() => []),
   ]);
 

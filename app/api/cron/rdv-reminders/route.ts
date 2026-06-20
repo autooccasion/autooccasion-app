@@ -7,7 +7,8 @@ const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? '';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  const secret = req.headers.get('x-cron-secret') ?? new URL(req.url).searchParams.get('secret');
+  const authHeader = req.headers.get('authorization');
+  const secret = authHeader?.replace('Bearer ', '') ?? req.headers.get('x-cron-secret');
   if (secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: 'Non autorisé.' }, { status: 401 });
   }
@@ -129,6 +130,7 @@ function buildRdvReminderClientEmail(p: {
     </div>
     <p style="color:#a1a1aa;font-size:13px">En cas d'empêchement, contactez-nous au plus vite :<br/><a href="mailto:info.gpcars@gmail.com" style="color:#60a5fa">info.gpcars@gmail.com</a></p>
     <p style="margin-top:24px;color:#71717a;font-size:12px">GP-CARS · Belgique</p>
+    <p style="margin-top:8px;color:#52525b;font-size:11px">Ce rappel vous a été envoyé car vous avez un rendez-vous chez GP-CARS. Pour toute demande concernant vos données personnelles, contactez <a href="mailto:info.gpcars@gmail.com" style="color:#52525b">info.gpcars@gmail.com</a>.</p>
   </div>
 </div>`;
 }

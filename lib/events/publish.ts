@@ -87,7 +87,7 @@ export async function emit<T extends EventType>(
 ): Promise<void> {
   // Always persist
   try {
-    await publishEvent(type, source, payload as Record<string, unknown>);
+    await publishEvent(type, source, payload as Record<string, unknown>, NOTIFY || undefined);
   } catch {
     // Non-blocking — don't crash the caller if DB is unavailable
   }

@@ -27,16 +27,18 @@ function formatDate(d: Date | string | null | undefined): string {
 
 async function setStatus(formData: FormData) {
   'use server';
+  const session = await auth();
+  if (!session?.user?.email) return;
   const id   = Number(formData.get('id'));
   const status = String(formData.get('status') ?? '');
-  if (id > 0 && status) await updateLeadStatus(id, status);
+  if (id > 0 && status) await updateLeadStatus(id, session.user.email, status);
 }
 
 export default async function LeadsPage() {
   const session = await auth();
   if (!session?.user?.email) redirect('/login');
 
-  const leads = await getLeads(200).catch(() => []);
+  const leads = await getLeads(session.user.email, 200).catch(() => []);
 
   const chauds  = leads.filter((l) => l.priority === 'ROUGE');
   const suivis  = leads.filter((l) => l.priority === 'ORANGE');

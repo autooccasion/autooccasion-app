@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
         );
         await publishEvent('atelier.intervention_creee', 'atelier', {
           vehicleId: id, interventionId: intervention.id, vehicleLabel: label,
-        });
+        }, email);
       }
 
       return NextResponse.json({ ok: true });

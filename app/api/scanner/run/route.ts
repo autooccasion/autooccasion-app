@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from 'app/auth';
-import { cookies } from 'next/headers';
 import { scanAutoscout24 } from '@/lib/scanner/autoscout24';
 import { runCarmeloAnalysis } from '@/lib/carmelo/analyze-core';
 import { getVehicleByListingUrl } from 'app/db';
@@ -26,7 +25,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY || cookies().get('gp_api_key')?.value;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return NextResponse.json({ error: 'Clé API Anthropic non configurée.' }, { status: 500 });
 
   // 2. Scrape AutoScout24 search results.

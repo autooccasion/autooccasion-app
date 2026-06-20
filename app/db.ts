@@ -130,6 +130,7 @@ export type VehicleRecord = typeof vehicle.$inferSelect;
 
 const madoreLead = pgTable('MadoreLead', {
   id: serial('id').primaryKey(),
+  email:              varchar('email', { length: 64 }),
   prospectName:       varchar('prospect_name', { length: 128 }),
   prospectPhone:      varchar('prospect_phone', { length: 32 }),
   prospectEmail:      varchar('prospect_email', { length: 128 }),
@@ -154,6 +155,7 @@ export type MadoreLeadRecord = typeof madoreLead.$inferSelect;
 
 const systemEvent = pgTable('SystemEvent', {
   id: serial('id').primaryKey(),
+  email: varchar('email', { length: 64 }),
   type: varchar('type', { length: 64 }).notNull(),   // 'lead.rouge', 'opportunite.or', 'stock.immobilise', 'analyse.low_confidence'
   source: varchar('source', { length: 32 }).notNull(), // 'madore', 'carmelo', 'scanner', 'marketing', 'controller'
   payload: json('payload').$type<Record<string, unknown>>(),
@@ -177,6 +179,7 @@ export type PriceHistoryRecord = typeof priceHistory.$inferSelect;
 
 const demandSignal = pgTable('DemandSignal', {
   id: serial('id').primaryKey(),
+  email: varchar('email', { length: 64 }),
   vehicleType: varchar('vehicle_type', { length: 64 }),    // 'SUV', 'citadine', 'berline', etc.
   fuelPreference: varchar('fuel_preference', { length: 32 }),
   gearboxPreference: varchar('gearbox_preference', { length: 32 }),
@@ -460,6 +463,7 @@ function ensureSchema(): Promise<void> {
     await getClient()`
       CREATE TABLE IF NOT EXISTS "MadoreLead" (
         id SERIAL PRIMARY KEY,
+        email VARCHAR(64),
         prospect_name VARCHAR(128),
         prospect_phone VARCHAR(32),
         prospect_email VARCHAR(128),
@@ -481,8 +485,13 @@ function ensureSchema(): Promise<void> {
       )`;
 
     await getClient()`
+      ALTER TABLE "MadoreLead"
+        ADD COLUMN IF NOT EXISTS email VARCHAR(64)`;
+
+    await getClient()`
       CREATE TABLE IF NOT EXISTS "SystemEvent" (
         id SERIAL PRIMARY KEY,
+        email VARCHAR(64),
         type VARCHAR(64) NOT NULL,
         source VARCHAR(32) NOT NULL,
         payload JSONB,
@@ -490,6 +499,10 @@ function ensureSchema(): Promise<void> {
         processed_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT NOW()
       )`;
+
+    await getClient()`
+      ALTER TABLE "SystemEvent"
+        ADD COLUMN IF NOT EXISTS email VARCHAR(64)`;
 
     await getClient()`
       CREATE TABLE IF NOT EXISTS "PriceHistory" (
@@ -504,6 +517,7 @@ function ensureSchema(): Promise<void> {
     await getClient()`
       CREATE TABLE IF NOT EXISTS "DemandSignal" (
         id SERIAL PRIMARY KEY,
+        email VARCHAR(64),
         vehicle_type VARCHAR(64),
         fuel_preference VARCHAR(32),
         gearbox_preference VARCHAR(32),
@@ -513,6 +527,10 @@ function ensureSchema(): Promise<void> {
         priority VARCHAR(16),
         created_at TIMESTAMP DEFAULT NOW()
       )`;
+
+    await getClient()`
+      ALTER TABLE "DemandSignal"
+        ADD COLUMN IF NOT EXISTS email VARCHAR(64)`;
 
     await getClient()`
       CREATE TABLE IF NOT EXISTS "AtelierIntervention" (
@@ -1124,6 +1142,7 @@ export async function getStockVehicles(ownerEmail: string) {
 // ============================================================
 
 export type SaveLeadInput = {
+  email?: string | null;
   prospectName?: string | null;
   prospectPhone?: string | null;
   prospectEmail?: string | null;
@@ -1141,9 +1160,10 @@ export type SaveLeadInput = {
   conversation?: {role:string;content:string}[] | null;
 };
 
-export async function saveLead(input: SaveLeadInput): Promise<MadoreLeadRecord[]> {
+export async function saveLead(email: string, input: SaveLeadInput): Promise<MadoreLeadRecord[]> {
   await ensureSchema();
   return await getDb().insert(madoreLead).values({
+    email,
     ...input,
     status: 'nouveau',
     createdAt: new Date(),
@@ -1151,18 +1171,19 @@ export async function saveLead(input: SaveLeadInput): Promise<MadoreLeadRecord[]
   }).returning();
 }
 
-export async function getLeads(limit = 100): Promise<MadoreLeadRecord[]> {
+export async function getLeads(email: string, limit = 100): Promise<MadoreLeadRecord[]> {
   await ensureSchema();
   return await getDb()
     .select()
     .from(madoreLead)
+    .where(eq(madoreLead.email, email))
     .orderBy(desc(madoreLead.createdAt))
     .limit(limit);
 }
 
-export async function updateLeadStatus(id: number, status: string): Promise<void> {
+export async function updateLeadStatus(id: number, email: string, status: string): Promise<void> {
   await ensureSchema();
-  await getDb().update(madoreLead).set({ status, updatedAt: new Date() }).where(eq(madoreLead.id, id));
+  await getDb().update(madoreLead).set({ status, updatedAt: new Date() }).where(and(eq(madoreLead.id, id), eq(madoreLead.email, email)));
 }
 
 export async function bulkImportVehicles(
@@ -1222,17 +1243,20 @@ export async function publishEvent(
   type: string,
   source: string,
   payload: Record<string, unknown>,
+  email?: string,
 ): Promise<void> {
   await ensureSchema();
-  await getDb().insert(systemEvent).values({ type, source, payload, processed: false });
+  await getDb().insert(systemEvent).values({ email: email ?? null, type, source, payload, processed: false });
 }
 
-export async function getPendingEvents(limit = 50): Promise<SystemEventRecord[]> {
+export async function getPendingEvents(email?: string, limit = 50): Promise<SystemEventRecord[]> {
   await ensureSchema();
+  const conditions = [eq(systemEvent.processed, false)];
+  if (email) conditions.push(eq(systemEvent.email, email));
   return await getDb()
     .select()
     .from(systemEvent)
-    .where(eq(systemEvent.processed, false))
+    .where(and(...conditions))
     .orderBy(systemEvent.createdAt)
     .limit(limit);
 }
@@ -1245,13 +1269,13 @@ export async function markEventProcessed(id: number): Promise<void> {
     .where(eq(systemEvent.id, id));
 }
 
-export async function getRecentEvents(limit = 100): Promise<SystemEventRecord[]> {
+export async function getRecentEvents(email?: string, limit = 100): Promise<SystemEventRecord[]> {
   await ensureSchema();
-  return await getDb()
-    .select()
-    .from(systemEvent)
-    .orderBy(desc(systemEvent.createdAt))
-    .limit(limit);
+  const query = getDb().select().from(systemEvent);
+  if (email) {
+    return await query.where(eq(systemEvent.email, email)).orderBy(desc(systemEvent.createdAt)).limit(limit);
+  }
+  return await query.orderBy(desc(systemEvent.createdAt)).limit(limit);
 }
 
 // ============================================================
@@ -1299,7 +1323,7 @@ export async function getLastKnownPrice(
 // DEMAND SIGNALS — ce que les prospects MADORE recherchent
 // ============================================================
 
-export async function saveDemandSignal(signal: {
+export async function saveDemandSignal(email: string, signal: {
   vehicleType?: string | null;
   fuelPreference?: string | null;
   gearboxPreference?: string | null;
@@ -1310,6 +1334,7 @@ export async function saveDemandSignal(signal: {
 }): Promise<void> {
   await ensureSchema();
   await getDb().insert(demandSignal).values({
+    email,
     vehicleType: signal.vehicleType ?? null,
     fuelPreference: signal.fuelPreference ?? null,
     gearboxPreference: signal.gearboxPreference ?? null,
@@ -1321,22 +1346,28 @@ export async function saveDemandSignal(signal: {
 }
 
 // Returns aggregated demand signals from the last 30 days for Carmelo's context.
-export async function getRecentDemandSignals(limit = 20): Promise<DemandSignalRecord[]> {
+export async function getRecentDemandSignals(email?: string, limit = 20): Promise<DemandSignalRecord[]> {
   await ensureSchema();
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  // Use raw SQL for date comparison since drizzle gte needs import
-  const rows = await getClient()`
-    SELECT * FROM "DemandSignal"
-    WHERE created_at >= ${since}
-    ORDER BY created_at DESC
-    LIMIT ${limit}
-  `;
+  const rows = email
+    ? await getClient()`
+        SELECT * FROM "DemandSignal"
+        WHERE created_at >= ${since} AND email = ${email}
+        ORDER BY created_at DESC
+        LIMIT ${limit}
+      `
+    : await getClient()`
+        SELECT * FROM "DemandSignal"
+        WHERE created_at >= ${since}
+        ORDER BY created_at DESC
+        LIMIT ${limit}
+      `;
   return rows as DemandSignalRecord[];
 }
 
 // Returns a formatted string summarizing demand for Carmelo's system prompt injection.
-export async function buildDemandBlock(): Promise<string> {
-  const signals = await getRecentDemandSignals(30);
+export async function buildDemandBlock(email?: string): Promise<string> {
+  const signals = await getRecentDemandSignals(email, 30);
   if (signals.length === 0) return '';
 
   const typeCount: Record<string, number> = {};

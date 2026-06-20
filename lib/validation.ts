@@ -63,3 +63,20 @@ export function withValidation<T>(
     throw err;
   });
 }
+
+/** Validates a 17-character VIN number format (ISO 3779). */
+export function validateVin(v: unknown): string | null {
+  if (typeof v !== 'string' || v.trim().length === 0) return null;
+  const vin = v.trim().toUpperCase();
+  if (vin.length !== 17) return null;
+  if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) return null;
+  return vin;
+}
+
+/** Validates a vehicle km reading (0 to 999999). */
+export function validateKm(v: unknown): number | null {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 0 || n > 999999) return null;
+  return n;
+}

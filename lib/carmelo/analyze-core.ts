@@ -46,7 +46,7 @@ export async function runCarmeloAnalysis(
     const [past, summaries, demand, lastPrice] = await Promise.all([
       getVehiclesForMemory(email, 40),
       getVehicleSummaries(email),
-      buildDemandBlock(),
+      buildDemandBlock(email),
       getLastKnownPrice(email, url),
     ]);
     memoryBlock = buildMemoryBlock(selectRelevant(past, listing.text));

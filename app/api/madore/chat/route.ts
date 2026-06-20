@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
         if (!demo && full.includes('# RAPPORT MADORE')) {
           const report = parseMadoreReport(full);
           if (report) {
-            const saved = await saveLead({ ...report, conversation: messages }).catch((err) => {
+            const saved = await saveLead(ownerEmail, { ...report, conversation: messages }).catch((err) => {
               console.error('MADORE: échec sauvegarde lead', err);
               return null;
             });
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
               const typeMatch = (report.vehicleSearch ?? '').match(/SUV|berline|citadine|break|monospace|cabriolet|utilitaire/i);
               const fuelMatch = (report.vehicleSearch ?? '').match(/essence|diesel|hybride|électrique/i);
               const gearMatch = (report.vehicleSearch ?? '').match(/automatique|manuelle/i);
-              await saveDemandSignal({
+              await saveDemandSignal(ownerEmail, {
                 vehicleType: typeMatch?.[0]?.toLowerCase() ?? null,
                 fuelPreference: fuelMatch?.[0]?.toLowerCase() ?? null,
                 gearboxPreference: gearMatch?.[0]?.toLowerCase() ?? null,

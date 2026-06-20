@@ -8,6 +8,8 @@ import {
 import { buildGarantieSystemPrompt } from '@/lib/agents/garantie/system-prompt';
 import type { GarantieCoverage, GarantieStatus } from '@/lib/agents/shared-types';
 
+export const maxDuration = 60;
+
 function extractJson(text: string): Record<string, unknown> | null {
   const match = text.match(/```json\s*([\s\S]*?)```/);
   if (!match) return null;
@@ -78,9 +80,18 @@ export async function POST(req: NextRequest) {
   const dossier = await getGarantieDossier(body.dossierId, email);
   if (!dossier) return NextResponse.json({ error: 'Dossier introuvable.' }, { status: 404 });
 
+  // Auto-recover dossiers stuck in en_analyse for more than 5 minutes
+  if (dossier.status === 'en_analyse') {
+    const stuckSince = dossier.updatedAt ? new Date(dossier.updatedAt).getTime() : 0;
+    if (Date.now() - stuckSince < 5 * 60 * 1000) {
+      return NextResponse.json({ error: 'Analyse déjà en cours. Réessayez dans 5 minutes.' }, { status: 409 });
+    }
+    // Been stuck > 5 min — allow retry
+  }
+
   await updateGarantieDossier(body.dossierId, email, { status: 'en_analyse' as GarantieStatus });
 
-  const client = new Anthropic({ apiKey });
+  const client = new Anthropic({ apiKey, maxRetries: 2 });
   const userMessage = buildDossierMessage(dossier);
 
   let rawText = '';
@@ -146,10 +157,10 @@ export async function POST(req: NextRequest) {
     category: parsed.category,
     coverageDecision: parsed.coverageDecision,
     litigationProbability,
-  });
+  }, email);
 
   if (newStatus === 'litige') {
-    await publishEvent('garantie.litige_detecte', 'garantie', { dossierId: body.dossierId });
+    await publishEvent('garantie.litige_detecte', 'garantie', { dossierId: body.dossierId }, email);
   }
 
   return NextResponse.json({ ok: true, result: parsed });
