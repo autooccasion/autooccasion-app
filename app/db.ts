@@ -148,6 +148,43 @@ const madoreLead = pgTable('MadoreLead', {
 
 export type MadoreLeadRecord = typeof madoreLead.$inferSelect;
 
+const systemEvent = pgTable('SystemEvent', {
+  id: serial('id').primaryKey(),
+  type: varchar('type', { length: 64 }).notNull(),   // 'lead.rouge', 'opportunite.or', 'stock.immobilise', 'analyse.low_confidence'
+  source: varchar('source', { length: 32 }).notNull(), // 'madore', 'carmelo', 'scanner', 'marketing', 'controller'
+  payload: json('payload').$type<Record<string, unknown>>(),
+  processed: boolean('processed').default(false),
+  processedAt: timestamp('processed_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export type SystemEventRecord = typeof systemEvent.$inferSelect;
+
+const priceHistory = pgTable('PriceHistory', {
+  id: serial('id').primaryKey(),
+  listingUrl: text('listing_url').notNull(),
+  email: varchar('email', { length: 64 }).notNull(),
+  price: integer('price').notNull(),
+  vehicleLabel: text('vehicle_label'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export type PriceHistoryRecord = typeof priceHistory.$inferSelect;
+
+const demandSignal = pgTable('DemandSignal', {
+  id: serial('id').primaryKey(),
+  vehicleType: varchar('vehicle_type', { length: 64 }),    // 'SUV', 'citadine', 'berline', etc.
+  fuelPreference: varchar('fuel_preference', { length: 32 }),
+  gearboxPreference: varchar('gearbox_preference', { length: 32 }),
+  budgetMin: integer('budget_min'),
+  budgetMax: integer('budget_max'),
+  leadId: integer('lead_id'),
+  priority: varchar('priority', { length: 16 }),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export type DemandSignalRecord = typeof demandSignal.$inferSelect;
+
 const vehicleEvent = pgTable('VehicleEvent', {
   id: serial('id').primaryKey(),
   vehicleId: integer('vehicle_id').notNull(),
@@ -289,6 +326,40 @@ function ensureSchema(): Promise<void> {
         status VARCHAR(16) DEFAULT 'nouveau',
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "SystemEvent" (
+        id SERIAL PRIMARY KEY,
+        type VARCHAR(64) NOT NULL,
+        source VARCHAR(32) NOT NULL,
+        payload JSONB,
+        processed BOOLEAN DEFAULT false,
+        processed_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "PriceHistory" (
+        id SERIAL PRIMARY KEY,
+        listing_url TEXT NOT NULL,
+        email VARCHAR(64) NOT NULL,
+        price INTEGER NOT NULL,
+        vehicle_label TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "DemandSignal" (
+        id SERIAL PRIMARY KEY,
+        vehicle_type VARCHAR(64),
+        fuel_preference VARCHAR(32),
+        gearbox_preference VARCHAR(32),
+        budget_min INTEGER,
+        budget_max INTEGER,
+        lead_id INTEGER,
+        priority VARCHAR(16),
+        created_at TIMESTAMP DEFAULT NOW()
       )`;
   })();
   return _schemaReady;
@@ -615,6 +686,8 @@ export async function getVehicleSummaries(email: string): Promise<VehicleSummary
       status: vehicle.status,
       askingPrice: vehicle.askingPrice,
       maxBuyPrice: vehicle.maxBuyPrice,
+      estimatedMargin: vehicle.estimatedMargin,
+      confidence: vehicle.confidence,
       realBuyPrice: vehicle.realBuyPrice,
       realSellPrice: vehicle.realSellPrice,
       decision: vehicle.decision,
@@ -637,6 +710,8 @@ export async function getVehicleSummaries(email: string): Promise<VehicleSummary
     status: (r.status ?? 'analyse') as VehicleStatus,
     askingPrice: r.askingPrice ?? null,
     maxBuyPrice: r.maxBuyPrice ?? null,
+    estimatedMargin: r.estimatedMargin ?? null,
+    confidence: r.confidence ?? null,
     realBuyPrice: r.realBuyPrice ?? null,
     realSellPrice: r.realSellPrice ?? null,
     decision: (r.decision ?? 'INCONNU') as AgentDecision,
@@ -868,4 +943,155 @@ export async function bulkImportVehicles(
   }
 
   return { imported, errors };
+}
+
+// ============================================================
+// SYSTEM EVENTS — bus d'événements inter-agents
+// ============================================================
+
+export async function publishEvent(
+  type: string,
+  source: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  await ensureSchema();
+  await getDb().insert(systemEvent).values({ type, source, payload, processed: false });
+}
+
+export async function getPendingEvents(limit = 50): Promise<SystemEventRecord[]> {
+  await ensureSchema();
+  return await getDb()
+    .select()
+    .from(systemEvent)
+    .where(eq(systemEvent.processed, false))
+    .orderBy(systemEvent.createdAt)
+    .limit(limit);
+}
+
+export async function markEventProcessed(id: number): Promise<void> {
+  await ensureSchema();
+  await getDb()
+    .update(systemEvent)
+    .set({ processed: true, processedAt: new Date() })
+    .where(eq(systemEvent.id, id));
+}
+
+export async function getRecentEvents(limit = 100): Promise<SystemEventRecord[]> {
+  await ensureSchema();
+  return await getDb()
+    .select()
+    .from(systemEvent)
+    .orderBy(desc(systemEvent.createdAt))
+    .limit(limit);
+}
+
+// ============================================================
+// PRICE HISTORY — historique des prix par URL d'annonce
+// ============================================================
+
+export async function recordPricePoint(
+  email: string,
+  listingUrl: string,
+  price: number,
+  vehicleLabel?: string,
+): Promise<void> {
+  await ensureSchema();
+  await getDb().insert(priceHistory).values({ email, listingUrl, price, vehicleLabel: vehicleLabel ?? null });
+}
+
+export async function getPriceHistory(
+  email: string,
+  listingUrl: string,
+): Promise<PriceHistoryRecord[]> {
+  await ensureSchema();
+  return await getDb()
+    .select()
+    .from(priceHistory)
+    .where(and(eq(priceHistory.email, email), eq(priceHistory.listingUrl, listingUrl)))
+    .orderBy(desc(priceHistory.createdAt));
+}
+
+// Returns the last known price for a listing URL, or null if never seen.
+export async function getLastKnownPrice(
+  email: string,
+  listingUrl: string,
+): Promise<number | null> {
+  await ensureSchema();
+  const rows = await getDb()
+    .select({ price: priceHistory.price })
+    .from(priceHistory)
+    .where(and(eq(priceHistory.email, email), eq(priceHistory.listingUrl, listingUrl)))
+    .orderBy(desc(priceHistory.createdAt))
+    .limit(1);
+  return rows[0]?.price ?? null;
+}
+
+// ============================================================
+// DEMAND SIGNALS — ce que les prospects MADORE recherchent
+// ============================================================
+
+export async function saveDemandSignal(signal: {
+  vehicleType?: string | null;
+  fuelPreference?: string | null;
+  gearboxPreference?: string | null;
+  budgetMin?: number | null;
+  budgetMax?: number | null;
+  leadId?: number | null;
+  priority?: string | null;
+}): Promise<void> {
+  await ensureSchema();
+  await getDb().insert(demandSignal).values({
+    vehicleType: signal.vehicleType ?? null,
+    fuelPreference: signal.fuelPreference ?? null,
+    gearboxPreference: signal.gearboxPreference ?? null,
+    budgetMin: signal.budgetMin ?? null,
+    budgetMax: signal.budgetMax ?? null,
+    leadId: signal.leadId ?? null,
+    priority: signal.priority ?? null,
+  });
+}
+
+// Returns aggregated demand signals from the last 30 days for Carmelo's context.
+export async function getRecentDemandSignals(limit = 20): Promise<DemandSignalRecord[]> {
+  await ensureSchema();
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  // Use raw SQL for date comparison since drizzle gte needs import
+  const rows = await getClient()`
+    SELECT * FROM "DemandSignal"
+    WHERE created_at >= ${since}
+    ORDER BY created_at DESC
+    LIMIT ${limit}
+  `;
+  return rows as DemandSignalRecord[];
+}
+
+// Returns a formatted string summarizing demand for Carmelo's system prompt injection.
+export async function buildDemandBlock(): Promise<string> {
+  const signals = await getRecentDemandSignals(30);
+  if (signals.length === 0) return '';
+
+  const typeCount: Record<string, number> = {};
+  const budgets: number[] = [];
+
+  for (const s of signals) {
+    if (s.vehicleType) typeCount[s.vehicleType] = (typeCount[s.vehicleType] ?? 0) + 1;
+    if (s.budgetMax) budgets.push(s.budgetMax);
+  }
+
+  const topTypes = Object.entries(typeCount)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([type, count]) => `${type} (${count} demande${count > 1 ? 's' : ''})`)
+    .join(', ');
+
+  const avgBudget = budgets.length > 0
+    ? Math.round(budgets.reduce((a, b) => a + b, 0) / budgets.length)
+    : null;
+
+  const lines = [`## DEMANDE PROSPECTS MADORE (30 derniers jours — ${signals.length} leads)`];
+  if (topTypes) lines.push(`Types les plus recherchés : ${topTypes}`);
+  if (avgBudget) lines.push(`Budget moyen des prospects : ${avgBudget.toLocaleString('fr-BE')} €`);
+  lines.push('→ Priorise les achats qui correspondent à cette demande réelle.');
+
+  return lines.join('\n');
 }

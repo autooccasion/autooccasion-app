@@ -94,5 +94,43 @@ export function runHardRules(vehicle: VehicleSummary): ControllerFlag[] {
     }
   }
 
+  // RÈGLE: Confiance trop faible → validation humaine obligatoire
+  if (vehicle.confidence != null && vehicle.confidence < 60) {
+    flags.push({
+      code: 'CONFIANCE_CRITIQUE',
+      severity: 'bloquant',
+      message: `Score de confiance Carmelo très bas (${vehicle.confidence}%) — données insuffisantes pour décider. Vérification manuelle obligatoire avant achat.`,
+    });
+  } else if (vehicle.confidence != null && vehicle.confidence < GP_CARS_PARAMS.seuil_confiance_autonome) {
+    flags.push({
+      code: 'CONFIANCE_FAIBLE',
+      severity: 'avertissement',
+      message: `Score de confiance Carmelo sous le seuil autonome (${vehicle.confidence}% < ${GP_CARS_PARAMS.seuil_confiance_autonome}%). Vérifier manuellement avant de conclure l'achat.`,
+    });
+  }
+
+  // RÈGLE: Marge estimée insuffisante AVANT achat (check préventif)
+  if (vehicle.estimatedMargin != null && vehicle.maxBuyPrice != null) {
+    const sellPriceEstimate = (vehicle.maxBuyPrice ?? 0) + (vehicle.estimatedMargin ?? 0);
+    const tier = sellPriceEstimate >= 20000 ? 'premium' : 'standard';
+    const minMargin = MARGES[tier].orange_min;
+    if (vehicle.estimatedMargin < minMargin) {
+      flags.push({
+        code: 'MARGE_ESTIMEE_INSUFFISANTE',
+        severity: 'bloquant',
+        message: `Marge estimée (${vehicle.estimatedMargin.toLocaleString('fr-BE')} €) inférieure au seuil ${tier} (${minMargin.toLocaleString('fr-BE')} €). Refuser cet achat.`,
+      });
+    }
+  }
+
+  // RÈGLE: Pas de price max calculé → décision impossible
+  if (vehicle.maxBuyPrice == null && (vehicle.decision === 'VERT' || vehicle.decision === 'ORANGE')) {
+    flags.push({
+      code: 'PRIX_MAX_MANQUANT',
+      severity: 'bloquant',
+      message: `Décision positive (${vehicle.decision}) sans prix d'achat maximum calculé — analyse incomplète, ne pas acheter.`,
+    });
+  }
+
   return flags;
 }

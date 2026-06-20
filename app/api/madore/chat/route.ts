@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
-import { getStockVehicles, saveLead } from 'app/db';
+import { getStockVehicles, saveLead, saveDemandSignal } from 'app/db';
 import { buildMadoreSystemPrompt } from '@/lib/madore/system-prompt';
 import { matchStock, formatStockForPrompt } from '@/lib/madore/stock-match';
 import { parseMadoreReport } from '@/lib/madore/parse-report';
 import { checkRateLimit } from '@/lib/rate-limit';
+import { emit } from '@/lib/events/publish';
 
 export const maxDuration = 30;
 
@@ -75,9 +76,42 @@ export async function POST(req: NextRequest) {
         if (!demo && full.includes('# RAPPORT MADORE')) {
           const report = parseMadoreReport(full);
           if (report) {
-            await saveLead({ ...report, conversation: messages }).catch((err) =>
-              console.error('MADORE: échec sauvegarde lead', err),
-            );
+            const saved = await saveLead({ ...report, conversation: messages }).catch((err) => {
+              console.error('MADORE: échec sauvegarde lead', err);
+              return null;
+            });
+
+            const leadId = saved?.[0]?.id ?? null;
+
+            // Persist demand signal for Carmelo (MADORE→Carmelo loop)
+            if (report.budget || report.vehicleSearch) {
+              const typeMatch = (report.vehicleSearch ?? '').match(/SUV|berline|citadine|break|monospace|cabriolet|utilitaire/i);
+              const fuelMatch = (report.vehicleSearch ?? '').match(/essence|diesel|hybride|électrique/i);
+              const gearMatch = (report.vehicleSearch ?? '').match(/automatique|manuelle/i);
+              await saveDemandSignal({
+                vehicleType: typeMatch?.[0]?.toLowerCase() ?? null,
+                fuelPreference: fuelMatch?.[0]?.toLowerCase() ?? null,
+                gearboxPreference: gearMatch?.[0]?.toLowerCase() ?? null,
+                budgetMax: report.budget ?? null,
+                budgetMin: report.budget ? Math.round(report.budget * 0.7) : null,
+                leadId,
+                priority: report.priority ?? null,
+              }).catch(() => {});
+            }
+
+            // Immediate alert for hot leads (ROUGE)
+            if (report.priority === 'ROUGE' && leadId) {
+              await emit('lead.rouge', 'madore', {
+                leadId,
+                prospectName: report.prospectName ?? 'Inconnu',
+                prospectPhone: report.prospectPhone ?? undefined,
+                vehicleSearch: report.vehicleSearch ?? 'Non précisé',
+                budget: report.budget ?? undefined,
+                score: report.score ?? 0,
+                summary: report.summary ?? '',
+                actionRecommended: report.actionRecommended ?? undefined,
+              }).catch(() => {});
+            }
           }
         }
 
