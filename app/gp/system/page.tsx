@@ -99,7 +99,7 @@ export default async function SystemPage() {
   );
 
   // Recent events from the bus
-  const recentEvents = await getRecentEvents(30).catch(() => []);
+  const recentEvents = await getRecentEvents(undefined, 30).catch(() => []);
   const pendingEvents = recentEvents.filter((e) => !e.processed);
 
   // Registry validation
