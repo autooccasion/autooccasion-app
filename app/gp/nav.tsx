@@ -1,12 +1,13 @@
 import Link from 'next/link';
 
-type Tab = 'stock' | 'achats' | 'dashboard' | 'atelier';
+type Tab = 'stock' | 'achats' | 'dashboard' | 'atelier' | 'garantie';
 
 const tabs: { key: Tab; label: string; href: string; description: string }[] = [
   { key: 'stock',     label: 'Stock',       href: '/gp/stock',     description: 'Source de vérité' },
   { key: 'achats',    label: 'Achats',      href: '/carmelo',      description: 'Agent Carmelo' },
   { key: 'dashboard', label: 'Dashboard',   href: '/gp/dashboard', description: 'Analytics' },
   { key: 'atelier',   label: 'Atelier',     href: '/gp/atelier',   description: 'Préparation véhicules' },
+  { key: 'garantie',  label: 'Garantie',    href: '/gp/garantie',  description: 'Suivi garanties' },
 ];
 
 export default function GPNav({ active }: { active: Tab }) {
