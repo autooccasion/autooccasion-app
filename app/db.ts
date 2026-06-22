@@ -15,6 +15,11 @@ export type WorkshopJobType = 'entretien' | 'pneus' | 'freins' | 'carrosserie' |
 export type WorkshopJobStatus = 'planifie' | 'en_cours' | 'termine' | 'annule';
 export type SupplierType = 'mecano' | 'carrossier' | 'pneus' | 'pieces' | 'autre';
 
+export type BuyerType = 'particulier' | 'professionnel';
+export type WarrantyType = 'legale' | 'contractuelle' | 'aucune';
+export type WarrantyCaseStatus = 'ouvert' | 'en_cours' | 'resolu' | 'rejete' | 'litige';
+export type WarrantyCaseSeverity = 'mineur' | 'modere' | 'grave' | 'critique';
+
 let _client: ReturnType<typeof postgres> | undefined;
 let _db: ReturnType<typeof drizzle> | undefined;
 
@@ -169,6 +174,53 @@ const workshopSupplier = pgTable('WorkshopSupplier', {
   createdAt: timestamp('created_at').defaultNow(),
 });
 
+const warranty = pgTable('Warranty', {
+  id: serial('id').primaryKey(),
+  vehicleId: integer('vehicle_id').notNull(),
+  email: varchar('email', { length: 64 }).notNull(),
+  buyerName: varchar('buyer_name', { length: 128 }),
+  buyerEmail: varchar('buyer_email', { length: 128 }),
+  buyerPhone: varchar('buyer_phone', { length: 32 }),
+  buyerType: varchar('buyer_type', { length: 16 }).$type<BuyerType>().default('particulier'),
+  warrantyType: varchar('warranty_type', { length: 16 }).$type<WarrantyType>().default('legale'),
+  soldPrice: integer('sold_price'),
+  soldAt: timestamp('sold_at').notNull(),
+  legalExpiresAt: timestamp('legal_expires_at').notNull(),
+  contractExpiresAt: timestamp('contract_expires_at'),
+  notes: text('notes'),
+  active: boolean('active').default(true),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+const warrantyCase = pgTable('WarrantyCase', {
+  id: serial('id').primaryKey(),
+  warrantyId: integer('warranty_id').notNull(),
+  email: varchar('email', { length: 64 }).notNull(),
+  description: text('description').notNull(),
+  severity: varchar('severity', { length: 16 }).$type<WarrantyCaseSeverity>().default('modere'),
+  status: varchar('status', { length: 16 }).$type<WarrantyCaseStatus>().default('ouvert'),
+  estimatedCost: integer('estimated_cost'),
+  actualCost: integer('actual_cost'),
+  resolution: text('resolution'),
+  customerResponse: text('customer_response'),
+  openedAt: timestamp('opened_at').defaultNow(),
+  resolvedAt: timestamp('resolved_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+const legalRegulation = pgTable('LegalRegulation', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 64 }).notNull(),
+  topic: varchar('topic', { length: 64 }).notNull(),
+  content: text('content').notNull(),
+  updatedBy: varchar('updated_by', { length: 8 }).notNull().default('system'),
+  aiSummary: text('ai_summary'),
+  lastCheckedAt: timestamp('last_checked_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // ============================================================
 // SINGLE SCHEMA INIT
 // Promise singleton: concurrent requests in the same Node.js process
@@ -298,6 +350,56 @@ function ensureSchema(): Promise<void> {
         notes TEXT,
         active BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "Warranty" (
+        id SERIAL PRIMARY KEY,
+        vehicle_id INTEGER NOT NULL,
+        email VARCHAR(64) NOT NULL,
+        buyer_name VARCHAR(128),
+        buyer_email VARCHAR(128),
+        buyer_phone VARCHAR(32),
+        buyer_type VARCHAR(16) DEFAULT 'particulier',
+        warranty_type VARCHAR(16) DEFAULT 'legale',
+        sold_price INTEGER,
+        sold_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        legal_expires_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        contract_expires_at TIMESTAMP,
+        notes TEXT,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "WarrantyCase" (
+        id SERIAL PRIMARY KEY,
+        warranty_id INTEGER NOT NULL,
+        email VARCHAR(64) NOT NULL,
+        description TEXT NOT NULL,
+        severity VARCHAR(16) DEFAULT 'modere',
+        status VARCHAR(16) DEFAULT 'ouvert',
+        estimated_cost INTEGER,
+        actual_cost INTEGER,
+        resolution TEXT,
+        customer_response TEXT,
+        opened_at TIMESTAMP DEFAULT NOW(),
+        resolved_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "LegalRegulation" (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(64) NOT NULL,
+        topic VARCHAR(64) NOT NULL,
+        content TEXT NOT NULL,
+        updated_by VARCHAR(8) NOT NULL DEFAULT 'system',
+        ai_summary TEXT,
+        last_checked_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
       )`;
   })();
   return _schemaReady;
@@ -802,4 +904,191 @@ export async function createSupplier(
     notes: data.notes ?? null,
     active: true,
   }).returning();
+}
+
+// ============================================================
+// WARRANTY
+// ============================================================
+
+export type WarrantyRecord = typeof warranty.$inferSelect;
+export type WarrantyCaseRecord = typeof warrantyCase.$inferSelect;
+
+export async function createWarranty(email: string, data: {
+  vehicleId: number;
+  buyerName?: string | null;
+  buyerEmail?: string | null;
+  buyerPhone?: string | null;
+  buyerType: BuyerType;
+  warrantyType: WarrantyType;
+  soldPrice?: number | null;
+  soldAt: Date;
+  contractMonths?: number | null;
+  legalDurationMonths?: 12 | 24 | null;  // particulier: 24 (défaut) ou 12 si clause réductive
+  notes?: string | null;
+}): Promise<WarrantyRecord[]> {
+  await ensureSchema();
+  // Véhicules d'occasion : 2 ans pour particuliers (réductible à 1 an par clause), 0 pour pros (pas de garantie légale)
+  const legalMonths = data.buyerType === 'particulier' ? (data.legalDurationMonths ?? 24) : 0;
+  const legalExpiresAt = new Date(data.soldAt);
+  legalExpiresAt.setMonth(legalExpiresAt.getMonth() + legalMonths);
+  let contractExpiresAt: Date | null = null;
+  if (data.warrantyType === 'contractuelle' && data.contractMonths) {
+    contractExpiresAt = new Date(data.soldAt);
+    contractExpiresAt.setMonth(contractExpiresAt.getMonth() + data.contractMonths);
+  }
+  return await getDb().insert(warranty).values({
+    vehicleId: data.vehicleId,
+    email,
+    buyerName: data.buyerName ?? null,
+    buyerEmail: data.buyerEmail ?? null,
+    buyerPhone: data.buyerPhone ?? null,
+    buyerType: data.buyerType,
+    warrantyType: data.warrantyType,
+    soldPrice: data.soldPrice ?? null,
+    soldAt: data.soldAt,
+    legalExpiresAt,
+    contractExpiresAt,
+    notes: data.notes ?? null,
+    active: true,
+  }).returning();
+}
+
+export async function getWarranties(email: string, activeOnly = false): Promise<WarrantyRecord[]> {
+  await ensureSchema();
+  void activeOnly;
+  return await getDb().select().from(warranty).where(eq(warranty.email, email))
+    .orderBy(desc(warranty.soldAt)).limit(200);
+}
+
+export async function getWarranty(id: number, email: string): Promise<WarrantyRecord | null> {
+  await ensureSchema();
+  const rows = await getDb().select().from(warranty)
+    .where(and(eq(warranty.id, id), eq(warranty.email, email))).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function createWarrantyCase(email: string, data: {
+  warrantyId: number;
+  description: string;
+  severity?: WarrantyCaseSeverity;
+  estimatedCost?: number | null;
+}): Promise<WarrantyCaseRecord[]> {
+  await ensureSchema();
+  return await getDb().insert(warrantyCase).values({
+    warrantyId: data.warrantyId,
+    email,
+    description: data.description,
+    severity: data.severity ?? 'modere',
+    status: 'ouvert',
+    estimatedCost: data.estimatedCost ?? null,
+    openedAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }).returning();
+}
+
+export async function getWarrantyCases(warrantyId: number, email: string): Promise<WarrantyCaseRecord[]> {
+  await ensureSchema();
+  return await getDb().select().from(warrantyCase)
+    .where(and(eq(warrantyCase.warrantyId, warrantyId), eq(warrantyCase.email, email)))
+    .orderBy(desc(warrantyCase.createdAt));
+}
+
+export async function getOpenWarrantyCases(email: string): Promise<WarrantyCaseRecord[]> {
+  await ensureSchema();
+  return await getDb().select().from(warrantyCase)
+    .where(and(eq(warrantyCase.email, email), notInArray(warrantyCase.status, ['resolu', 'rejete'])))
+    .orderBy(desc(warrantyCase.createdAt))
+    .limit(100);
+}
+
+export async function updateWarrantyCase(id: number, email: string, update: Partial<{
+  status: WarrantyCaseStatus;
+  severity: WarrantyCaseSeverity;
+  estimatedCost: number | null;
+  actualCost: number | null;
+  resolution: string | null;
+  customerResponse: string | null;
+  resolvedAt: Date | null;
+}>): Promise<WarrantyCaseRecord[]> {
+  await ensureSchema();
+  return await getDb().update(warrantyCase)
+    .set({ ...update, updatedAt: new Date() })
+    .where(and(eq(warrantyCase.id, id), eq(warrantyCase.email, email)))
+    .returning();
+}
+
+// ============================================================
+// LEGAL REGULATIONS — réglementation mise à jour par IA
+// ============================================================
+
+export type LegalRegulationRecord = typeof legalRegulation.$inferSelect;
+
+const DEFAULT_REGULATIONS: Record<string, string> = {
+  'garantie-vo-belgique': `GARANTIE VÉHICULES D'OCCASION — DROIT BELGE
+Loi du 1er septembre 2004 + Directive UE 2019/771 (transposée le 1er juin 2022)
+
+ACHETEUR PARTICULIER
+• Durée légale : 2 ans minimum (réductible à 1 an par clause écrite explicite dans le contrat)
+• Charge de la preuve inversée pendant 1 an : le défaut est présumé préexister à la vente
+• Au-delà d'1 an : l'acheteur doit prouver que le défaut existait lors de la vente
+
+ACHETEUR PROFESSIONNEL
+• Aucune garantie légale obligatoire — uniquement contractuelle (à définir au contrat)
+
+ÉLÉMENTS NON COUVERTS (usure normale)
+• Pneus, freins, embrayage, courroies de distribution/accessoires, batterie, balais d'essuie-glace
+• Carrosserie cosmétique déclarée et connue de l'acheteur avant la vente
+• Consommables (huile, filtres, liquides de frein/refroidissement)
+• Dommages consécutifs à une mauvaise utilisation ou à un accident post-vente
+
+VICES CACHÉS (Code civil belge — art. 1641)
+• Défaut non apparent, non déclaré, rendant le véhicule impropre à l'usage prévu
+• Délai d'action : 1 an à partir de la découverte du vice (art. 1648 C.civ.)
+• Se cumule avec la garantie légale de conformité
+
+OBLIGATIONS SPÉCIFIQUES BELGIQUE
+• CarPass obligatoire : certifie le kilométrage réel (loi du 11 juin 2004)
+• Contrôle technique : valide ou à refaire dans les 2 mois suivant la vente
+• Certificat de conformité requis pour tout véhicule importé de l'UE
+
+LITIGES — RECOURS
+• Médiation : SPF Économie (0800 120 33) ou SGAM (Service de Gestion Amiable)
+• Justice de paix : litiges ≤ 5 000 €
+• Tribunal de l'entreprise : litiges entre professionnels`,
+};
+
+export async function getLegalRegulation(email: string, topic: string): Promise<LegalRegulationRecord | null> {
+  await ensureSchema();
+  const rows = await getDb().select().from(legalRegulation)
+    .where(and(eq(legalRegulation.email, email), eq(legalRegulation.topic, topic)))
+    .limit(1);
+  if (rows[0]) return rows[0];
+  // Seed default on first access
+  const defaultContent = DEFAULT_REGULATIONS[topic];
+  if (!defaultContent) return null;
+  const inserted = await getDb().insert(legalRegulation).values({
+    email, topic, content: defaultContent, updatedBy: 'system', lastCheckedAt: new Date(),
+  }).returning();
+  return inserted[0] ?? null;
+}
+
+export async function updateLegalRegulation(
+  email: string,
+  topic: string,
+  content: string,
+  updatedBy: 'human' | 'ai',
+  aiSummary?: string | null,
+): Promise<LegalRegulationRecord[]> {
+  await ensureSchema();
+  const existing = await getLegalRegulation(email, topic);
+  if (!existing) {
+    return await getDb().insert(legalRegulation).values({
+      email, topic, content, updatedBy, aiSummary: aiSummary ?? null, lastCheckedAt: new Date(),
+    }).returning();
+  }
+  return await getDb().update(legalRegulation)
+    .set({ content, updatedBy, aiSummary: aiSummary ?? null, lastCheckedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(legalRegulation.email, email), eq(legalRegulation.topic, topic)))
+    .returning();
 }
