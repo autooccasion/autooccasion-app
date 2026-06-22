@@ -1,6 +1,6 @@
 import { auth } from 'app/auth';
 import { redirect } from 'next/navigation';
-import { getWarranties, getOpenWarrantyCases, getVehicles } from 'app/db';
+import { getWarranties, getOpenWarrantyCases, getVehicles, getLegalRegulation } from 'app/db';
 import GPNav from '../nav';
 import GarantieClient from './client';
 
@@ -14,13 +14,15 @@ export default async function GarantiePage() {
   let warranties: Awaited<ReturnType<typeof getWarranties>> = [];
   let openCases: Awaited<ReturnType<typeof getOpenWarrantyCases>> = [];
   let vehicles: Awaited<ReturnType<typeof getVehicles>> = [];
+  let regulation: Awaited<ReturnType<typeof getLegalRegulation>> = null;
   let loadError = false;
 
   try {
-    [warranties, openCases, vehicles] = await Promise.all([
+    [warranties, openCases, vehicles, regulation] = await Promise.all([
       getWarranties(email),
       getOpenWarrantyCases(email),
       getVehicles(email, 200),
+      getLegalRegulation(email, 'garantie-vo-belgique'),
     ]);
   } catch (err) {
     console.error('Garantie page: échec chargement', err);
@@ -72,6 +74,7 @@ export default async function GarantiePage() {
             initialWarranties={warranties}
             initialCases={openCases}
             vehicles={vehicleInfos}
+            initialRegulation={regulation}
           />
         )}
       </div>

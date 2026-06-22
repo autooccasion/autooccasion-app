@@ -209,6 +209,18 @@ const warrantyCase = pgTable('WarrantyCase', {
   updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+const legalRegulation = pgTable('LegalRegulation', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 64 }).notNull(),
+  topic: varchar('topic', { length: 64 }).notNull(),
+  content: text('content').notNull(),
+  updatedBy: varchar('updated_by', { length: 8 }).notNull().default('system'),
+  aiSummary: text('ai_summary'),
+  lastCheckedAt: timestamp('last_checked_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // ============================================================
 // SINGLE SCHEMA INIT
 // Promise singleton: concurrent requests in the same Node.js process
@@ -373,6 +385,19 @@ function ensureSchema(): Promise<void> {
         customer_response TEXT,
         opened_at TIMESTAMP DEFAULT NOW(),
         resolved_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "LegalRegulation" (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(64) NOT NULL,
+        topic VARCHAR(64) NOT NULL,
+        content TEXT NOT NULL,
+        updated_by VARCHAR(8) NOT NULL DEFAULT 'system',
+        ai_summary TEXT,
+        last_checked_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       )`;
@@ -990,5 +1015,80 @@ export async function updateWarrantyCase(id: number, email: string, update: Part
   return await getDb().update(warrantyCase)
     .set({ ...update, updatedAt: new Date() })
     .where(and(eq(warrantyCase.id, id), eq(warrantyCase.email, email)))
+    .returning();
+}
+
+// ============================================================
+// LEGAL REGULATIONS — réglementation mise à jour par IA
+// ============================================================
+
+export type LegalRegulationRecord = typeof legalRegulation.$inferSelect;
+
+const DEFAULT_REGULATIONS: Record<string, string> = {
+  'garantie-vo-belgique': `GARANTIE VÉHICULES D'OCCASION — DROIT BELGE
+Loi du 1er septembre 2004 + Directive UE 2019/771 (transposée le 1er juin 2022)
+
+ACHETEUR PARTICULIER
+• Durée légale : 2 ans minimum (réductible à 1 an par clause écrite explicite dans le contrat)
+• Charge de la preuve inversée pendant 1 an : le défaut est présumé préexister à la vente
+• Au-delà d'1 an : l'acheteur doit prouver que le défaut existait lors de la vente
+
+ACHETEUR PROFESSIONNEL
+• Aucune garantie légale obligatoire — uniquement contractuelle (à définir au contrat)
+
+ÉLÉMENTS NON COUVERTS (usure normale)
+• Pneus, freins, embrayage, courroies de distribution/accessoires, batterie, balais d'essuie-glace
+• Carrosserie cosmétique déclarée et connue de l'acheteur avant la vente
+• Consommables (huile, filtres, liquides de frein/refroidissement)
+• Dommages consécutifs à une mauvaise utilisation ou à un accident post-vente
+
+VICES CACHÉS (Code civil belge — art. 1641)
+• Défaut non apparent, non déclaré, rendant le véhicule impropre à l'usage prévu
+• Délai d'action : 1 an à partir de la découverte du vice (art. 1648 C.civ.)
+• Se cumule avec la garantie légale de conformité
+
+OBLIGATIONS SPÉCIFIQUES BELGIQUE
+• CarPass obligatoire : certifie le kilométrage réel (loi du 11 juin 2004)
+• Contrôle technique : valide ou à refaire dans les 2 mois suivant la vente
+• Certificat de conformité requis pour tout véhicule importé de l'UE
+
+LITIGES — RECOURS
+• Médiation : SPF Économie (0800 120 33) ou SGAM (Service de Gestion Amiable)
+• Justice de paix : litiges ≤ 5 000 €
+• Tribunal de l'entreprise : litiges entre professionnels`,
+};
+
+export async function getLegalRegulation(email: string, topic: string): Promise<LegalRegulationRecord | null> {
+  await ensureSchema();
+  const rows = await getDb().select().from(legalRegulation)
+    .where(and(eq(legalRegulation.email, email), eq(legalRegulation.topic, topic)))
+    .limit(1);
+  if (rows[0]) return rows[0];
+  // Seed default on first access
+  const defaultContent = DEFAULT_REGULATIONS[topic];
+  if (!defaultContent) return null;
+  const inserted = await getDb().insert(legalRegulation).values({
+    email, topic, content: defaultContent, updatedBy: 'system', lastCheckedAt: new Date(),
+  }).returning();
+  return inserted[0] ?? null;
+}
+
+export async function updateLegalRegulation(
+  email: string,
+  topic: string,
+  content: string,
+  updatedBy: 'human' | 'ai',
+  aiSummary?: string | null,
+): Promise<LegalRegulationRecord[]> {
+  await ensureSchema();
+  const existing = await getLegalRegulation(email, topic);
+  if (!existing) {
+    return await getDb().insert(legalRegulation).values({
+      email, topic, content, updatedBy, aiSummary: aiSummary ?? null, lastCheckedAt: new Date(),
+    }).returning();
+  }
+  return await getDb().update(legalRegulation)
+    .set({ content, updatedBy, aiSummary: aiSummary ?? null, lastCheckedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(legalRegulation.email, email), eq(legalRegulation.topic, topic)))
     .returning();
 }

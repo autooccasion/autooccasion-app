@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { WarrantyRecord, WarrantyCaseRecord, WarrantyCaseStatus, WarrantyCaseSeverity } from 'app/db';
+import type { WarrantyRecord, WarrantyCaseRecord, WarrantyCaseStatus, WarrantyCaseSeverity, LegalRegulationRecord } from 'app/db';
 
 const STATUS_CONFIG: Record<WarrantyCaseStatus, { label: string; style: string }> = {
   ouvert:    { label: 'Ouvert',    style: 'bg-yellow-950 text-yellow-300 border-yellow-800' },
@@ -29,6 +29,7 @@ type Props = {
   initialWarranties: WarrantyRecord[];
   initialCases: WarrantyCaseRecord[];
   vehicles: VehicleInfo[];
+  initialRegulation: LegalRegulationRecord | null;
 };
 
 function euro(n: number | null | undefined): string {
@@ -61,13 +62,21 @@ const EXPIRY_LABEL = {
   expired:  'Expirée',
 };
 
-export default function GarantieClient({ initialWarranties, initialCases, vehicles }: Props) {
+export default function GarantieClient({ initialWarranties, initialCases, vehicles, initialRegulation }: Props) {
   const [warranties, setWarranties] = useState<WarrantyRecord[]>(initialWarranties);
   const [cases, setCases] = useState<WarrantyCaseRecord[]>(initialCases);
   const [loadingId, setLoadingId] = useState<number | null>(null);
   const [msg, setMsg] = useState('');
   const [showNewCase, setShowNewCase] = useState<number | null>(null); // warrantyId
   const [showNewWarranty, setShowNewWarranty] = useState(false);
+
+  const [regulation, setRegulation] = useState<LegalRegulationRecord | null>(initialRegulation);
+  const [regExpanded, setRegExpanded] = useState(false);
+  const [regEditing, setRegEditing] = useState(false);
+  const [regEditContent, setRegEditContent] = useState(initialRegulation?.content ?? '');
+  const [regLoading, setRegLoading] = useState(false);
+  const [regMsg, setRegMsg] = useState('');
+  const [showAiSummary, setShowAiSummary] = useState(false);
 
   const vehicleMap = new Map(vehicles.map((v) => [v.id, v]));
 
@@ -133,6 +142,58 @@ export default function GarantieClient({ initialWarranties, initialCases, vehicl
     }
   }
 
+  async function refreshRegulationWithAI() {
+    setRegLoading(true);
+    setRegMsg('');
+    setShowAiSummary(false);
+    try {
+      const res = await fetch('/api/garantie/regulations', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.regulation) {
+          setRegulation(data.regulation);
+          setRegEditContent(data.regulation.content);
+          setShowAiSummary(!!data.summary);
+          setRegMsg(data.summary ? 'Réglementation mise à jour par IA.' : 'Aucune modification nécessaire selon l\'IA.');
+        }
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setRegMsg(d.error || 'Erreur lors de la mise à jour IA.');
+      }
+    } catch {
+      setRegMsg('Erreur réseau.');
+    } finally {
+      setRegLoading(false);
+    }
+  }
+
+  async function saveManualRegulation() {
+    if (!regEditContent.trim()) return;
+    setRegLoading(true);
+    setRegMsg('');
+    try {
+      const res = await fetch('/api/garantie/regulations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: regEditContent, updatedBy: 'human' }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.regulation) {
+          setRegulation(data.regulation);
+          setRegEditing(false);
+          setRegMsg('Modifications enregistrées.');
+        }
+      } else {
+        setRegMsg('Erreur lors de la sauvegarde.');
+      }
+    } catch {
+      setRegMsg('Erreur réseau.');
+    } finally {
+      setRegLoading(false);
+    }
+  }
+
   async function addWarranty(form: NewWarrantyForm) {
     setMsg('');
     try {
@@ -173,17 +234,81 @@ export default function GarantieClient({ initialWarranties, initialCases, vehicl
         <p className="text-xs text-red-400 bg-red-950 border border-red-800 rounded px-3 py-2">{msg}</p>
       )}
 
-      {/* Legal info panel */}
-      <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
-        <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-2">Droit belge — Véhicules d&apos;occasion</p>
-        <ul className="text-xs text-zinc-400 leading-relaxed space-y-0.5 list-none">
-          <li>• <strong className="text-zinc-300">Particulier</strong> : 2 ans légaux — réductible à 1 an par clause écrite explicite dans le contrat de vente</li>
-          <li>• <strong className="text-zinc-300">Professionnel</strong> : aucune garantie légale obligatoire — uniquement contractuelle</li>
-          <li>• <strong className="text-zinc-300">Charge de la preuve</strong> : inversée pendant 1 an (défaut présumé exister à la vente) · Au-delà : c&apos;est à l&apos;acheteur de prouver</li>
-          <li>• <strong className="text-zinc-300">Non couverts</strong> : usure normale (pneus, freins, embrayage, courroies, batterie, balais), carrosserie cosmétique déclarée, consommables, mauvaise utilisation</li>
-          <li>• <strong className="text-zinc-300">Vices cachés</strong> : art. 1641 C.civ. — défaut non apparent rendant le véhicule impropre · Délai : 1 an dès découverte</li>
-          <li>• <strong className="text-zinc-300">CarPass</strong> obligatoire · CT valide ou à refaire dans les 2 mois</li>
-        </ul>
+      {/* Réglementation dynamique */}
+      <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-4 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Réglementation — Véhicules d&apos;occasion (Belgique)</p>
+            {regulation?.updatedAt && (
+              <p className="text-xs text-zinc-600 mt-0.5">
+                {regulation.updatedBy === 'ai' ? 'Mis à jour par IA' : regulation.updatedBy === 'human' ? 'Modifié manuellement' : 'Système'} · {formatDate(regulation.updatedAt)}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={refreshRegulationWithAI}
+              disabled={regLoading}
+              className="px-2.5 py-1 text-xs rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 border border-zinc-600 disabled:opacity-40 transition-colors"
+            >
+              {regLoading ? '…' : '✦ Mettre à jour avec IA'}
+            </button>
+            <button
+              onClick={() => { setRegEditing(!regEditing); setRegEditContent(regulation?.content ?? ''); }}
+              className="px-2.5 py-1 text-xs rounded-lg bg-zinc-800 text-zinc-400 hover:bg-zinc-700 border border-zinc-600 transition-colors"
+            >
+              {regEditing ? '✕' : 'Modifier'}
+            </button>
+          </div>
+        </div>
+
+        {regMsg && (
+          <p className="text-xs text-blue-300 bg-blue-950 border border-blue-800 rounded px-3 py-2">{regMsg}</p>
+        )}
+
+        {showAiSummary && regulation?.aiSummary && (
+          <p className="text-xs text-green-300 bg-green-950 border border-green-800 rounded px-3 py-2">
+            <strong>Modifications IA :</strong> {regulation.aiSummary}
+          </p>
+        )}
+
+        {regEditing ? (
+          <div className="space-y-2">
+            <textarea
+              value={regEditContent}
+              onChange={(e) => setRegEditContent(e.target.value)}
+              rows={14}
+              className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-xs text-zinc-100 font-mono resize-y"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={saveManualRegulation}
+                disabled={regLoading}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white text-black hover:bg-zinc-200 disabled:opacity-40 transition-colors"
+              >
+                {regLoading ? '…' : 'Enregistrer'}
+              </button>
+              <button
+                onClick={() => setRegEditing(false)}
+                className="px-3 py-1.5 text-xs rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className={`text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap ${!regExpanded ? 'line-clamp-5' : ''}`}>
+              {regulation?.content ?? ''}
+            </div>
+            <button
+              onClick={() => setRegExpanded(!regExpanded)}
+              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              {regExpanded ? '▲ Réduire' : '▼ Voir tout'}
+            </button>
+          </>
+        )}
       </div>
 
       {/* Open cases */}
