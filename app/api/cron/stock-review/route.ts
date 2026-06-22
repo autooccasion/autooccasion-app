@@ -11,8 +11,9 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
 export async function GET(req: NextRequest) {
-  // Security: verify cron secret
-  const secret = req.headers.get('x-cron-secret') ?? req.nextUrl.searchParams.get('secret');
+  // Security: verify cron secret via Bearer header (consistent with other crons)
+  const authHeader = req.headers.get('authorization');
+  const secret = authHeader?.replace('Bearer ', '') ?? req.headers.get('x-cron-secret');
   if (secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

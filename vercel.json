@@ -15,6 +15,18 @@
     {
       "path": "/api/cron/stock-review",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/mandats-relances",
+      "schedule": "30 9 * * *"
+    },
+    {
+      "path": "/api/cron/leads-relances",
+      "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/cron/gae-weekly",
+      "schedule": "0 6 * * 1"
     }
   ]
 }

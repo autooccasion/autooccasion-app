@@ -2589,3 +2589,59 @@ export async function getGaeReport(email: string): Promise<{
     avgConfidence: v.total > 0 ? Math.round(v.confidenceSum / v.total) : 0,
   })).sort((a, b) => b.commissionEstimee - a.commissionEstimee);
 }
+
+// ============================================================
+// CRON HELPERS
+// ============================================================
+
+// Returns MandatRelances due within the next 24 hours (not yet sent).
+export async function getDueRelances(email: string): Promise<MandatRelanceRecord[]> {
+  await ensureSchema();
+  const now = new Date();
+  const in24h = new Date(now.getTime() + 24 * 3600000);
+  const rows = await getClient()`
+    SELECT * FROM "MandatRelance"
+    WHERE email = ${email}
+      AND sent = false
+      AND scheduled_at <= ${in24h}
+    ORDER BY scheduled_at ASC
+    LIMIT 50
+  `;
+  return rows as MandatRelanceRecord[];
+}
+
+export async function markRelanceSent(id: number): Promise<void> {
+  await ensureSchema();
+  await getDb().update(mandatRelance).set({ sent: true, sentAt: new Date() }).where(eq(mandatRelance.id, id));
+}
+
+// Returns ROUGE leads that are still 'nouveau' and were created more than `hoursThreshold` hours ago.
+export async function getHotLeadsNotContacted(email: string, hoursThreshold = 4): Promise<MadoreLeadRecord[]> {
+  await ensureSchema();
+  const cutoff = new Date(Date.now() - hoursThreshold * 3600000);
+  const rows = await getClient()`
+    SELECT * FROM "MadoreLead"
+    WHERE email = ${email}
+      AND priority = 'ROUGE'
+      AND status = 'nouveau'
+      AND created_at <= ${cutoff}
+    ORDER BY created_at ASC
+    LIMIT 20
+  `;
+  return rows as MadoreLeadRecord[];
+}
+
+// Returns GAE opportunities stuck in early stages for more than `days` days.
+export async function getStagnantGaeOpportunites(email: string, days = 14): Promise<GaeOpportuniteRecord[]> {
+  await ensureSchema();
+  const cutoff = new Date(Date.now() - days * 86400000);
+  const rows = await getClient()`
+    SELECT * FROM "GaeOpportunite"
+    WHERE email = ${email}
+      AND status IN ('detectee', 'contactee')
+      AND detected_at <= ${cutoff}
+    ORDER BY detected_at ASC
+    LIMIT 50
+  `;
+  return rows as GaeOpportuniteRecord[];
+}
