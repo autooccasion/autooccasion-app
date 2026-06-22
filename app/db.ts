@@ -1,6 +1,6 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { pgTable, serial, varchar, text, timestamp, integer, boolean, json } from 'drizzle-orm/pg-core';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc, and, notInArray } from 'drizzle-orm';
 import postgres from 'postgres';
 import { genSaltSync, hashSync } from 'bcrypt-ts';
 import { extractDecision } from '@/lib/carmelo/decision';
@@ -10,6 +10,10 @@ import type { VehicleStatus, AgentDecision, ControllerFlag, VehicleSummary } fro
 
 export { extractDecision };
 export type { VehicleStatus, AgentDecision, VehicleSummary };
+
+export type WorkshopJobType = 'entretien' | 'pneus' | 'freins' | 'carrosserie' | 'ct' | 'nettoyage' | 'autre';
+export type WorkshopJobStatus = 'planifie' | 'en_cours' | 'termine' | 'annule';
+export type SupplierType = 'mecano' | 'carrossier' | 'pneus' | 'pieces' | 'autre';
 
 let _client: ReturnType<typeof postgres> | undefined;
 let _db: ReturnType<typeof drizzle> | undefined;
@@ -137,6 +141,34 @@ const vehicleEvent = pgTable('VehicleEvent', {
 
 export type VehicleEventRecord = typeof vehicleEvent.$inferSelect;
 
+const workshopJob = pgTable('WorkshopJob', {
+  id: serial('id').primaryKey(),
+  vehicleId: integer('vehicle_id').notNull(),
+  email: varchar('email', { length: 64 }).notNull(),
+  type: varchar('type', { length: 32 }).notNull().$type<WorkshopJobType>(),
+  description: text('description'),
+  supplier: varchar('supplier', { length: 128 }),
+  estimatedCost: integer('estimated_cost'),
+  actualCost: integer('actual_cost'),
+  status: varchar('status', { length: 16 }).notNull().$type<WorkshopJobStatus>(),
+  scheduledAt: timestamp('scheduled_at'),
+  completedAt: timestamp('completed_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+const workshopSupplier = pgTable('WorkshopSupplier', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 64 }).notNull(),
+  name: varchar('name', { length: 128 }).notNull(),
+  phone: varchar('phone', { length: 32 }),
+  contactEmail: varchar('contact_email', { length: 128 }),
+  type: varchar('type', { length: 32 }).$type<SupplierType>(),
+  notes: text('notes'),
+  active: boolean('active').default(true),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
 // ============================================================
 // SINGLE SCHEMA INIT
 // Promise singleton: concurrent requests in the same Node.js process
@@ -235,6 +267,36 @@ function ensureSchema(): Promise<void> {
         actor_type VARCHAR(16) NOT NULL DEFAULT 'human',
         agent_name VARCHAR(32),
         note TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "WorkshopJob" (
+        id SERIAL PRIMARY KEY,
+        vehicle_id INTEGER NOT NULL,
+        email VARCHAR(64) NOT NULL,
+        type VARCHAR(32) NOT NULL,
+        description TEXT,
+        supplier VARCHAR(128),
+        estimated_cost INTEGER,
+        actual_cost INTEGER,
+        status VARCHAR(16) NOT NULL DEFAULT 'planifie',
+        scheduled_at TIMESTAMP,
+        completed_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "WorkshopSupplier" (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(64) NOT NULL,
+        name VARCHAR(128) NOT NULL,
+        phone VARCHAR(32),
+        contact_email VARCHAR(128),
+        type VARCHAR(32),
+        notes TEXT,
+        active BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP DEFAULT NOW()
       )`;
   })();
@@ -626,4 +688,118 @@ export async function getVehicleEvents(vehicleId: number, email: string): Promis
     .from(vehicleEvent)
     .where(and(eq(vehicleEvent.vehicleId, vehicleId), eq(vehicleEvent.email, email)))
     .orderBy(desc(vehicleEvent.createdAt));
+}
+
+// ============================================================
+// WORKSHOP JOBS
+// ============================================================
+
+export type WorkshopJobRecord = typeof workshopJob.$inferSelect;
+
+export type NewWorkshopJob = {
+  vehicleId: number;
+  type: WorkshopJobType;
+  description?: string | null;
+  supplier?: string | null;
+  estimatedCost?: number | null;
+  scheduledAt?: Date | null;
+};
+
+export async function createWorkshopJob(email: string, data: NewWorkshopJob): Promise<WorkshopJobRecord[]> {
+  await ensureSchema();
+  return await getDb().insert(workshopJob).values({
+    vehicleId: data.vehicleId,
+    email,
+    type: data.type,
+    description: data.description ?? null,
+    supplier: data.supplier ?? null,
+    estimatedCost: data.estimatedCost ?? null,
+    actualCost: null,
+    status: 'planifie',
+    scheduledAt: data.scheduledAt ?? null,
+    completedAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }).returning();
+}
+
+export async function getWorkshopJobsByVehicle(vehicleId: number, email: string): Promise<WorkshopJobRecord[]> {
+  await ensureSchema();
+  return await getDb()
+    .select()
+    .from(workshopJob)
+    .where(and(eq(workshopJob.vehicleId, vehicleId), eq(workshopJob.email, email)))
+    .orderBy(desc(workshopJob.createdAt));
+}
+
+export async function getOpenWorkshopJobs(email: string): Promise<WorkshopJobRecord[]> {
+  await ensureSchema();
+  return await getDb()
+    .select()
+    .from(workshopJob)
+    .where(and(
+      eq(workshopJob.email, email),
+      notInArray(workshopJob.status, ['termine', 'annule']),
+    ))
+    .orderBy(desc(workshopJob.createdAt))
+    .limit(200);
+}
+
+export async function updateWorkshopJob(
+  id: number,
+  email: string,
+  update: Partial<{
+    status: WorkshopJobStatus;
+    actualCost: number | null;
+    completedAt: Date | null;
+    supplier: string | null;
+    estimatedCost: number | null;
+    scheduledAt: Date | null;
+    description: string | null;
+  }>,
+): Promise<WorkshopJobRecord[]> {
+  await ensureSchema();
+  return await getDb()
+    .update(workshopJob)
+    .set({ ...update, updatedAt: new Date() })
+    .where(and(eq(workshopJob.id, id), eq(workshopJob.email, email)))
+    .returning();
+}
+
+export async function deleteWorkshopJob(id: number, email: string): Promise<void> {
+  await ensureSchema();
+  await getDb()
+    .delete(workshopJob)
+    .where(and(eq(workshopJob.id, id), eq(workshopJob.email, email)));
+}
+
+// ============================================================
+// WORKSHOP SUPPLIERS
+// ============================================================
+
+export type SupplierRecord = typeof workshopSupplier.$inferSelect;
+
+export async function getSuppliers(email: string): Promise<SupplierRecord[]> {
+  await ensureSchema();
+  return await getDb()
+    .select()
+    .from(workshopSupplier)
+    .where(eq(workshopSupplier.email, email))
+    .orderBy(workshopSupplier.name);
+}
+
+export async function createSupplier(
+  email: string,
+  data: { name: string; phone?: string | null; contactEmail?: string | null; type?: SupplierType | null; notes?: string | null },
+): Promise<SupplierRecord[]> {
+  await ensureSchema();
+  return await getDb().insert(workshopSupplier).values({
+    email,
+    name: data.name,
+    phone: data.phone ?? null,
+    contactEmail: data.contactEmail ?? null,
+    type: data.type ?? null,
+    notes: data.notes ?? null,
+    active: true,
+  }).returning();
 }
