@@ -10,6 +10,7 @@ import type {
   VehicleStatus, AgentDecision, ControllerFlag, VehicleSummary,
   AtelierInterventionStatus, AtelierInterventionType, PieceStatus, RdvType, RdvStatus,
   GarantieStatus, GarantieCategory, GarantieCoverage, GarantieDocumentType,
+  MandatStatus, MandatPriorite, MandatUrgence, MandatRentabilite, ContactCanal, ContactResultat,
 } from '@/lib/agents/shared-types';
 
 export { extractDecision };
@@ -354,6 +355,119 @@ const garantiePiece = pgTable('GarantiePiece', {
 
 export type GarantiePieceRecord = typeof garantiePiece.$inferSelect;
 
+const mandatOpportunite = pgTable('MandatOpportunite', {
+  id:                  serial('id').primaryKey(),
+  email:               varchar('email', { length: 64 }).notNull(),
+  source:              varchar('source', { length: 32 }),
+  listingUrl:          text('listing_url'),
+  listingTitle:        text('listing_title'),
+  listingDescription:  text('listing_description'),
+  make:                varchar('make', { length: 48 }),
+  model:               varchar('model', { length: 64 }),
+  version:             varchar('version', { length: 128 }),
+  year:                integer('year'),
+  km:                  integer('km'),
+  fuel:                varchar('fuel', { length: 32 }),
+  gearbox:             varchar('gearbox', { length: 32 }),
+  askingPrice:         integer('asking_price'),
+  location:            varchar('location', { length: 128 }),
+  sellerName:          varchar('seller_name', { length: 128 }),
+  sellerPhone:         varchar('seller_phone', { length: 32 }),
+  sellerEmail:         varchar('seller_email', { length: 128 }),
+  sellerType:          varchar('seller_type', { length: 16 }),
+  annonceQuality:      integer('annonce_quality'),
+  photosQuality:       integer('photos_quality'),
+  daysSincePosted:     integer('days_since_posted'),
+  priceDropCount:      integer('price_drop_count').default(0),
+  scoreMandat:         integer('score_mandat'),
+  scoreSignature:      integer('score_signature'),
+  scoreRentabilite:    integer('score_rentabilite'),
+  priorite:            varchar('priorite', { length: 8 }).$type<MandatPriorite>(),
+  urgenceNiveau:       varchar('urgence_niveau', { length: 16 }).$type<MandatUrgence>(),
+  urgenceSignaux:      json('urgence_signaux').$type<string[]>(),
+  prixRapide:          integer('prix_rapide'),
+  prixMarche:          integer('prix_marche'),
+  prixOptimise:        integer('prix_optimise'),
+  delaiVente:          integer('delai_vente'),
+  commissionBrute:     integer('commission_brute'),
+  commissionNette:     integer('commission_nette'),
+  rentabilite:         varchar('rentabilite', { length: 16 }).$type<MandatRentabilite>(),
+  analyse:             text('analyse'),
+  forces:              json('forces').$type<string[]>(),
+  faiblesses:          json('faiblesses').$type<string[]>(),
+  risques:             json('risques').$type<string[]>(),
+  scriptSms:           text('script_sms'),
+  scriptWhatsapp:      text('script_whatsapp'),
+  scriptEmail:         text('script_email'),
+  scriptMessenger:     text('script_messenger'),
+  scriptTelephone:     json('script_telephone').$type<Record<string, string>>(),
+  objections:          json('objections').$type<Array<{objection:string;reponse:string;strategie:string}>>(),
+  relancesProgrammees: json('relances_programmees').$type<Array<{declencheur:string;canal:string;message:string}>>(),
+  nextSteps:           json('next_steps').$type<string[]>(),
+  status:              varchar('status', { length: 16 }).$type<MandatStatus>().default('nouveau'),
+  internalNotes:       text('internal_notes'),
+  rawAnalysis:         text('raw_analysis'),
+  confidenceLevel:     integer('confidence_level'),
+  proDeguise:          boolean('pro_deguise').default(false),
+  createdAt:           timestamp('created_at').defaultNow(),
+  updatedAt:           timestamp('updated_at').defaultNow(),
+});
+
+export type MandatOpportuniteRecord = typeof mandatOpportunite.$inferSelect;
+
+const mandatContact = pgTable('MandatContact', {
+  id:             serial('id').primaryKey(),
+  opportuniteId:  integer('opportunite_id').notNull(),
+  email:          varchar('email', { length: 64 }).notNull(),
+  canal:          varchar('canal', { length: 16 }).$type<ContactCanal>().notNull(),
+  messageEnvoye:  text('message_envoye'),
+  reponseObtenue: text('reponse_obtenue'),
+  resultat:       varchar('resultat', { length: 16 }).$type<ContactResultat>(),
+  createdAt:      timestamp('created_at').defaultNow(),
+});
+
+export type MandatContactRecord = typeof mandatContact.$inferSelect;
+
+const mandatRelance = pgTable('MandatRelance', {
+  id:             serial('id').primaryKey(),
+  opportuniteId:  integer('opportunite_id').notNull(),
+  email:          varchar('email', { length: 64 }).notNull(),
+  canal:          varchar('canal', { length: 16 }).$type<ContactCanal>().notNull(),
+  messagePrevu:   text('message_prevu'),
+  scheduledAt:    timestamp('scheduled_at').notNull(),
+  sent:           boolean('sent').default(false),
+  sentAt:         timestamp('sent_at'),
+  triggerType:    varchar('trigger_type', { length: 32 }),
+  createdAt:      timestamp('created_at').defaultNow(),
+});
+
+export type MandatRelanceRecord = typeof mandatRelance.$inferSelect;
+
+const mandatMandat = pgTable('MandatMandat', {
+  id:               serial('id').primaryKey(),
+  opportuniteId:    integer('opportunite_id').notNull(),
+  email:            varchar('email', { length: 64 }).notNull(),
+  mandatNumber:     varchar('mandat_number', { length: 64 }),
+  vehicleMake:      varchar('vehicle_make', { length: 48 }),
+  vehicleModel:     varchar('vehicle_model', { length: 64 }),
+  vehicleYear:      integer('vehicle_year'),
+  vehicleKm:        integer('vehicle_km'),
+  prixMandat:       integer('prix_mandat'),
+  commissionPct:    integer('commission_pct'),
+  durationDays:     integer('duration_days').default(60),
+  signedAt:         timestamp('signed_at').defaultNow(),
+  expiresAt:        timestamp('expires_at'),
+  soldAt:           timestamp('sold_at'),
+  soldPrice:        integer('sold_price'),
+  commissionEarned: integer('commission_earned'),
+  status:           varchar('status', { length: 16 }).default('actif'),
+  notes:            text('notes'),
+  createdAt:        timestamp('created_at').defaultNow(),
+  updatedAt:        timestamp('updated_at').defaultNow(),
+});
+
+export type MandatMandatRecord = typeof mandatMandat.$inferSelect;
+
 // ============================================================
 // SINGLE SCHEMA INIT
 // Promise singleton: concurrent requests in the same Node.js process
@@ -647,6 +761,85 @@ function ensureSchema(): Promise<void> {
         coverage_percent INTEGER, estimated_cost INTEGER, client_contribution INTEGER,
         justification TEXT,
         created_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "MandatOpportunite" (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(64) NOT NULL,
+        source VARCHAR(32),
+        listing_url TEXT,
+        listing_title TEXT,
+        listing_description TEXT,
+        make VARCHAR(48), model VARCHAR(64), version VARCHAR(128),
+        year INTEGER, km INTEGER, fuel VARCHAR(32), gearbox VARCHAR(32),
+        asking_price INTEGER, location VARCHAR(128),
+        seller_name VARCHAR(128), seller_phone VARCHAR(32), seller_email VARCHAR(128),
+        seller_type VARCHAR(16),
+        annonce_quality INTEGER, photos_quality INTEGER,
+        days_since_posted INTEGER, price_drop_count INTEGER DEFAULT 0,
+        score_mandat INTEGER, score_signature INTEGER, score_rentabilite INTEGER,
+        priorite VARCHAR(8), urgence_niveau VARCHAR(16),
+        urgence_signaux JSONB,
+        prix_rapide INTEGER, prix_marche INTEGER, prix_optimise INTEGER,
+        delai_vente INTEGER, commission_brute INTEGER, commission_nette INTEGER,
+        rentabilite VARCHAR(16),
+        analyse TEXT, forces JSONB, faiblesses JSONB, risques JSONB,
+        script_sms TEXT, script_whatsapp TEXT, script_email TEXT, script_messenger TEXT,
+        script_telephone JSONB, objections JSONB, relances_programmees JSONB, next_steps JSONB,
+        status VARCHAR(16) DEFAULT 'nouveau',
+        internal_notes TEXT, raw_analysis TEXT, confidence_level INTEGER,
+        pro_deguise BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "MandatContact" (
+        id SERIAL PRIMARY KEY,
+        opportunite_id INTEGER NOT NULL,
+        email VARCHAR(64) NOT NULL,
+        canal VARCHAR(16) NOT NULL,
+        message_envoye TEXT,
+        reponse_obtenue TEXT,
+        resultat VARCHAR(16),
+        created_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "MandatRelance" (
+        id SERIAL PRIMARY KEY,
+        opportunite_id INTEGER NOT NULL,
+        email VARCHAR(64) NOT NULL,
+        canal VARCHAR(16) NOT NULL,
+        message_prevu TEXT,
+        scheduled_at TIMESTAMP NOT NULL,
+        sent BOOLEAN DEFAULT false,
+        sent_at TIMESTAMP,
+        trigger_type VARCHAR(32),
+        created_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "MandatMandat" (
+        id SERIAL PRIMARY KEY,
+        opportunite_id INTEGER NOT NULL,
+        email VARCHAR(64) NOT NULL,
+        mandat_number VARCHAR(64),
+        vehicle_make VARCHAR(48), vehicle_model VARCHAR(64),
+        vehicle_year INTEGER, vehicle_km INTEGER,
+        prix_mandat INTEGER,
+        commission_pct INTEGER,
+        duration_days INTEGER DEFAULT 60,
+        signed_at TIMESTAMP DEFAULT NOW(),
+        expires_at TIMESTAMP,
+        sold_at TIMESTAMP,
+        sold_price INTEGER,
+        commission_earned INTEGER,
+        status VARCHAR(16) DEFAULT 'actif',
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
       )`;
   })();
   return _schemaReady;
@@ -1793,4 +1986,211 @@ export async function getGarantieStats(email: string): Promise<{
   const tauxPriseEnCharge = decides > 0 ? Math.round((prises / decides) * 100) : 0;
 
   return { total, actifs, litiges, resolus, coutTotal, coutMoyen, tauxPriseEnCharge };
+}
+
+// ============================================================
+// MANDATS — acquisition de mandats dépôt-vente
+// ============================================================
+
+export async function createMandatOpportunite(
+  email: string,
+  data: Partial<Omit<MandatOpportuniteRecord, 'id' | 'email' | 'createdAt' | 'updatedAt'>>,
+): Promise<MandatOpportuniteRecord> {
+  await ensureSchema();
+  const rows = await getDb().insert(mandatOpportunite).values({
+    email,
+    source:             data.source             ?? null,
+    listingUrl:         data.listingUrl         ?? null,
+    listingTitle:       data.listingTitle       ?? null,
+    listingDescription: data.listingDescription ?? null,
+    make:               data.make               ?? null,
+    model:              data.model              ?? null,
+    version:            data.version            ?? null,
+    year:               data.year               ?? null,
+    km:                 data.km                 ?? null,
+    fuel:               data.fuel               ?? null,
+    gearbox:            data.gearbox            ?? null,
+    askingPrice:        data.askingPrice        ?? null,
+    location:           data.location           ?? null,
+    sellerName:         data.sellerName         ?? null,
+    sellerPhone:        data.sellerPhone        ?? null,
+    sellerEmail:        data.sellerEmail        ?? null,
+    sellerType:         data.sellerType         ?? null,
+    status:             data.status             ?? 'nouveau',
+    proDeguise:         data.proDeguise         ?? false,
+  }).returning();
+  return rows[0];
+}
+
+export async function getMandatOpportunites(email: string, status?: MandatStatus): Promise<MandatOpportuniteRecord[]> {
+  await ensureSchema();
+  if (status) {
+    return await getDb()
+      .select()
+      .from(mandatOpportunite)
+      .where(and(eq(mandatOpportunite.email, email), eq(mandatOpportunite.status, status)))
+      .orderBy(desc(mandatOpportunite.createdAt));
+  }
+  return await getDb()
+    .select()
+    .from(mandatOpportunite)
+    .where(eq(mandatOpportunite.email, email))
+    .orderBy(desc(mandatOpportunite.createdAt));
+}
+
+export async function getMandatOpportunite(id: number, email: string): Promise<MandatOpportuniteRecord | null> {
+  await ensureSchema();
+  const rows = await getDb()
+    .select()
+    .from(mandatOpportunite)
+    .where(and(eq(mandatOpportunite.id, id), eq(mandatOpportunite.email, email)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateMandatOpportunite(
+  id: number,
+  email: string,
+  updates: Partial<Omit<MandatOpportuniteRecord, 'id' | 'email' | 'createdAt'>>,
+): Promise<void> {
+  await ensureSchema();
+  await getDb()
+    .update(mandatOpportunite)
+    .set({ ...updates, updatedAt: new Date() })
+    .where(and(eq(mandatOpportunite.id, id), eq(mandatOpportunite.email, email)));
+}
+
+export async function addMandatContact(
+  opportuniteId: number,
+  email: string,
+  contact: { canal: ContactCanal; messageEnvoye?: string | null; reponseObtenue?: string | null; resultat?: ContactResultat | null },
+): Promise<MandatContactRecord> {
+  await ensureSchema();
+  const rows = await getDb().insert(mandatContact).values({
+    opportuniteId,
+    email,
+    canal:           contact.canal,
+    messageEnvoye:   contact.messageEnvoye   ?? null,
+    reponseObtenue:  contact.reponseObtenue  ?? null,
+    resultat:        contact.resultat        ?? null,
+  }).returning();
+  return rows[0];
+}
+
+export async function getMandatContacts(opportuniteId: number): Promise<MandatContactRecord[]> {
+  await ensureSchema();
+  return await getDb()
+    .select()
+    .from(mandatContact)
+    .where(eq(mandatContact.opportuniteId, opportuniteId))
+    .orderBy(desc(mandatContact.createdAt));
+}
+
+export async function createMandatRelances(
+  opportuniteId: number,
+  email: string,
+  relances: Array<{ canal: ContactCanal; messagePrevu: string; scheduledAt: Date; triggerType: string }>,
+): Promise<void> {
+  await ensureSchema();
+  if (relances.length === 0) return;
+  await getDb().insert(mandatRelance).values(
+    relances.map(r => ({
+      opportuniteId,
+      email,
+      canal:        r.canal,
+      messagePrevu: r.messagePrevu,
+      scheduledAt:  r.scheduledAt,
+      triggerType:  r.triggerType,
+      sent:         false,
+    }))
+  );
+}
+
+export async function getPendingRelances(email: string): Promise<MandatRelanceRecord[]> {
+  await ensureSchema();
+  const now = new Date();
+  const rows = await getClient()`
+    SELECT * FROM "MandatRelance"
+    WHERE email = ${email}
+      AND sent = false
+      AND scheduled_at <= ${now}
+    ORDER BY scheduled_at ASC
+    LIMIT 50
+  `;
+  return rows as MandatRelanceRecord[];
+}
+
+export async function getUpcomingRelances(email: string, days = 14): Promise<MandatRelanceRecord[]> {
+  await ensureSchema();
+  const until = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  const rows = await getClient()`
+    SELECT * FROM "MandatRelance"
+    WHERE email = ${email}
+      AND sent = false
+      AND scheduled_at <= ${until}
+    ORDER BY scheduled_at ASC
+    LIMIT 100
+  `;
+  return rows as MandatRelanceRecord[];
+}
+
+export async function createMandatMandat(
+  email: string,
+  data: Partial<Omit<MandatMandatRecord, 'id' | 'email' | 'createdAt' | 'updatedAt'>>,
+): Promise<MandatMandatRecord> {
+  await ensureSchema();
+  const rows = await getDb().insert(mandatMandat).values({
+    email,
+    opportuniteId:   data.opportuniteId ?? 0,
+    mandatNumber:    data.mandatNumber    ?? null,
+    vehicleMake:     data.vehicleMake     ?? null,
+    vehicleModel:    data.vehicleModel    ?? null,
+    vehicleYear:     data.vehicleYear     ?? null,
+    vehicleKm:       data.vehicleKm       ?? null,
+    prixMandat:      data.prixMandat      ?? null,
+    commissionPct:   data.commissionPct   ?? 5,
+    durationDays:    data.durationDays    ?? 60,
+    signedAt:        new Date(),
+    expiresAt:       data.expiresAt       ?? null,
+    status:          'actif',
+    notes:           data.notes           ?? null,
+  }).returning();
+  return rows[0];
+}
+
+export async function getMandatStats(email: string): Promise<{
+  total: number;
+  nouveaux: number;
+  contactes: number;
+  rdv: number;
+  mandatsSigmes: number;
+  perdus: number;
+  prioriteA: number;
+  commissionEstimee: number;
+  commissionRealisee: number;
+  tauxConversion: number;
+}> {
+  await ensureSchema();
+  const [opps, mandats] = await Promise.all([
+    getMandatOpportunites(email),
+    getDb().select().from(mandatMandat).where(eq(mandatMandat.email, email)),
+  ]);
+
+  const total         = opps.length;
+  const nouveaux      = opps.filter(o => o.status === 'nouveau').length;
+  const contactes     = opps.filter(o => o.status === 'contacte').length;
+  const rdv           = opps.filter(o => o.status === 'rdv').length;
+  const mandatsSigmes = opps.filter(o => o.status === 'mandat').length;
+  const perdus        = opps.filter(o => o.status === 'perdu').length;
+  const prioriteA     = opps.filter(o => o.priorite === 'A').length;
+
+  const commissionEstimee  = opps.filter(o => o.commissionNette != null)
+    .reduce((s, o) => s + (o.commissionNette ?? 0), 0);
+  const commissionRealisee = mandats.filter(m => m.commissionEarned != null)
+    .reduce((s, m) => s + (m.commissionEarned ?? 0), 0);
+
+  const contactesTotal = contactes + rdv + mandatsSigmes + perdus;
+  const tauxConversion = contactesTotal > 0 ? Math.round((mandatsSigmes / contactesTotal) * 100) : 0;
+
+  return { total, nouveaux, contactes, rdv, mandatsSigmes, perdus, prioriteA, commissionEstimee, commissionRealisee, tauxConversion };
 }

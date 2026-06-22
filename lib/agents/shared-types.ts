@@ -32,6 +32,13 @@ export type PieceStatus               = 'a_commander' | 'commande' | 'recu' | 'm
 export type RdvType                   = 'diagnostic' | 'intervention' | 'livraison' | 'reprise_trade_in' | 'essai';
 export type RdvStatus                 = 'planifie' | 'confirme' | 'annule' | 'termine';
 
+export type MandatStatus      = 'nouveau' | 'contacte' | 'rdv' | 'mandat' | 'perdu' | 'rejete';
+export type MandatPriorite    = 'A' | 'B' | 'C' | 'rejet';
+export type MandatUrgence     = 'faible' | 'moyenne' | 'forte' | 'tres_forte';
+export type MandatRentabilite = 'faible' | 'correcte' | 'bonne' | 'excellente';
+export type ContactCanal      = 'sms' | 'whatsapp' | 'email' | 'telephone' | 'messenger';
+export type ContactResultat   = 'interesse' | 'negatif' | 'pas_reponse' | 'rdv_fixe' | 'mandat_signe';
+
 // Lightweight vehicle summary passed between agents.
 export type VehicleSummary = {
   id: number;

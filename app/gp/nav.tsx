@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-type Tab = 'stock' | 'achats' | 'dashboard' | 'leads' | 'training' | 'atelier' | 'garantie' | 'system';
+type Tab = 'stock' | 'achats' | 'dashboard' | 'leads' | 'training' | 'atelier' | 'garantie' | 'mandats' | 'system';
 
 const tabs: { key: Tab; label: string; href: string; description: string }[] = [
   { key: 'stock',    label: 'Stock',      href: '/gp/stock',     description: 'Source de vérité' },
@@ -10,6 +10,7 @@ const tabs: { key: Tab; label: string; href: string; description: string }[] = [
   { key: 'training', label: 'Formation',  href: '/gp/training',  description: 'Entraînement agents' },
   { key: 'atelier',  label: 'Atelier',    href: '/gp/atelier',   description: 'Agent Mécanique & RDV' },
   { key: 'garantie', label: 'Garantie',   href: '/gp/garantie',  description: 'Agent SAV & Litiges' },
+  { key: 'mandats',  label: 'Mandats',    href: '/gp/mandats',   description: 'Acquisition de mandats VO' },
   { key: 'system',   label: 'Système',    href: '/gp/system',    description: 'Santé des agents' },
 ];
 
