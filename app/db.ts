@@ -898,10 +898,12 @@ export async function createWarranty(email: string, data: {
   soldPrice?: number | null;
   soldAt: Date;
   contractMonths?: number | null;
+  legalDurationMonths?: 12 | 24 | null;  // particulier: 24 (défaut) ou 12 si clause réductive
   notes?: string | null;
 }): Promise<WarrantyRecord[]> {
   await ensureSchema();
-  const legalMonths = data.buyerType === 'particulier' ? 24 : 12;
+  // Véhicules d'occasion : 2 ans pour particuliers (réductible à 1 an par clause), 0 pour pros (pas de garantie légale)
+  const legalMonths = data.buyerType === 'particulier' ? (data.legalDurationMonths ?? 24) : 0;
   const legalExpiresAt = new Date(data.soldAt);
   legalExpiresAt.setMonth(legalExpiresAt.getMonth() + legalMonths);
   let contractExpiresAt: Date | null = null;

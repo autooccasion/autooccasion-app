@@ -175,10 +175,15 @@ export default function GarantieClient({ initialWarranties, initialCases, vehicl
 
       {/* Legal info panel */}
       <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
-        <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-2">Droit belge — Garantie légale</p>
-        <p className="text-xs text-zinc-400 leading-relaxed">
-          2 ans pour les particuliers · 1 an pour les professionnels · Non couverts : usure normale (pneus, freins, courroies, balais d&apos;essuie-glace) · Après 1 an : charge de la preuve sur l&apos;acheteur
-        </p>
+        <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-2">Droit belge — Véhicules d&apos;occasion</p>
+        <ul className="text-xs text-zinc-400 leading-relaxed space-y-0.5 list-none">
+          <li>• <strong className="text-zinc-300">Particulier</strong> : 2 ans légaux — réductible à 1 an par clause écrite explicite dans le contrat de vente</li>
+          <li>• <strong className="text-zinc-300">Professionnel</strong> : aucune garantie légale obligatoire — uniquement contractuelle</li>
+          <li>• <strong className="text-zinc-300">Charge de la preuve</strong> : inversée pendant 1 an (défaut présumé exister à la vente) · Au-delà : c&apos;est à l&apos;acheteur de prouver</li>
+          <li>• <strong className="text-zinc-300">Non couverts</strong> : usure normale (pneus, freins, embrayage, courroies, batterie, balais), carrosserie cosmétique déclarée, consommables, mauvaise utilisation</li>
+          <li>• <strong className="text-zinc-300">Vices cachés</strong> : art. 1641 C.civ. — défaut non apparent rendant le véhicule impropre · Délai : 1 an dès découverte</li>
+          <li>• <strong className="text-zinc-300">CarPass</strong> obligatoire · CT valide ou à refaire dans les 2 mois</li>
+        </ul>
       </div>
 
       {/* Open cases */}
@@ -399,8 +404,8 @@ function NewWarrantyForm({
             onChange={(e) => setForm((f) => ({ ...f, buyerType: e.target.value }))}
             className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-xs text-zinc-100"
           >
-            <option value="particulier">Particulier (2 ans légal)</option>
-            <option value="professionnel">Professionnel (1 an légal)</option>
+            <option value="particulier">Particulier (2 ans légal, réductible à 1 an)</option>
+            <option value="professionnel">Professionnel (pas de garantie légale)</option>
           </select>
         </div>
         <div>
