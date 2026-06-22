@@ -1,5 +1,6 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { pgTable, serial, varchar, text, timestamp, integer, boolean, json } from 'drizzle-orm/pg-core';
+import { pgTable, serial, varchar, text, timestamp, integer, boolean, json, jsonb } from 'drizzle-orm/pg-core';
+import type { GaeOpportuniteType, GaeAgentSource, GaeStatus } from '@/lib/agents/shared-types';
 import { eq, desc, and, inArray } from 'drizzle-orm';
 import postgres from 'postgres';
 import { genSaltSync, hashSync } from 'bcrypt-ts';
@@ -468,6 +469,64 @@ const mandatMandat = pgTable('MandatMandat', {
 
 export type MandatMandatRecord = typeof mandatMandat.$inferSelect;
 
+// ─── GAE TABLES ───────────────────────────────────────────────────────────────
+
+export const gaeOpportunite = pgTable('GaeOpportunite', {
+  id:                    serial('id').primaryKey(),
+  gaeId:                 varchar('gae_id', { length: 32 }).unique().notNull(),
+  email:                 varchar('email', { length: 64 }).notNull(),
+  type:                  varchar('type', { length: 16 }).notNull(),
+  agentSource:           varchar('agent_source', { length: 16 }).notNull(),
+  status:                varchar('status', { length: 16 }).default('detectee'),
+  title:                 varchar('title', { length: 256 }),
+  attributionConfidence: integer('attribution_confidence').default(100),
+  attributionNotes:      text('attribution_notes'),
+  estimatedValue:        integer('estimated_value'),
+  realValue:             integer('real_value'),
+  marginEstimated:       integer('margin_estimated'),
+  marginReal:            integer('margin_real'),
+  commissionEstimated:   integer('commission_estimated'),
+  commissionReal:        integer('commission_real'),
+  vehicleId:             integer('vehicle_id'),
+  leadId:                integer('lead_id'),
+  mandatOpportuniteId:   integer('mandat_opportunite_id'),
+  vehicleMake:           varchar('vehicle_make', { length: 48 }),
+  vehicleModel:          varchar('vehicle_model', { length: 64 }),
+  vehicleYear:           integer('vehicle_year'),
+  listingUrl:            text('listing_url'),
+  duplicateOf:           integer('duplicate_of'),
+  isDuplicate:           boolean('is_duplicate').default(false),
+  circumventionFlags:    jsonb('circumvention_flags'),
+  billingRate:           integer('billing_rate'),
+  billed:                boolean('billed').default(false),
+  billedAt:              timestamp('billed_at'),
+  billAmount:            integer('bill_amount'),
+  detectedAt:            timestamp('detected_at').defaultNow(),
+  contactedAt:           timestamp('contacted_at'),
+  qualifiedAt:           timestamp('qualified_at'),
+  transformedAt:         timestamp('transformed_at'),
+  lostAt:                timestamp('lost_at'),
+  createdAt:             timestamp('created_at').defaultNow(),
+  updatedAt:             timestamp('updated_at').defaultNow(),
+});
+
+export const gaeEvent = pgTable('GaeEvent', {
+  id:            serial('id').primaryKey(),
+  opportuniteId: integer('opportunite_id').notNull(),
+  email:         varchar('email', { length: 64 }).notNull(),
+  eventType:     varchar('event_type', { length: 32 }).notNull(),
+  oldValue:      text('old_value'),
+  newValue:      text('new_value'),
+  agentSource:   varchar('agent_source', { length: 16 }),
+  humanActor:    varchar('human_actor', { length: 64 }),
+  notes:         text('notes'),
+  metadata:      jsonb('metadata'),
+  createdAt:     timestamp('created_at').defaultNow(),
+});
+
+export type GaeOpportuniteRecord = typeof gaeOpportunite.$inferSelect;
+export type GaeEventRecord = typeof gaeEvent.$inferSelect;
+
 // ============================================================
 // SINGLE SCHEMA INIT
 // Promise singleton: concurrent requests in the same Node.js process
@@ -840,6 +899,61 @@ function ensureSchema(): Promise<void> {
         notes TEXT,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "GaeOpportunite" (
+        id SERIAL PRIMARY KEY,
+        gae_id VARCHAR(32) UNIQUE NOT NULL,
+        email VARCHAR(64) NOT NULL,
+        type VARCHAR(16) NOT NULL,
+        agent_source VARCHAR(16) NOT NULL,
+        status VARCHAR(16) DEFAULT 'detectee',
+        title VARCHAR(256),
+        attribution_confidence INTEGER DEFAULT 100,
+        attribution_notes TEXT,
+        estimated_value INTEGER,
+        real_value INTEGER,
+        margin_estimated INTEGER,
+        margin_real INTEGER,
+        commission_estimated INTEGER,
+        commission_real INTEGER,
+        vehicle_id INTEGER,
+        lead_id INTEGER,
+        mandat_opportunite_id INTEGER,
+        vehicle_make VARCHAR(48),
+        vehicle_model VARCHAR(64),
+        vehicle_year INTEGER,
+        listing_url TEXT,
+        duplicate_of INTEGER,
+        is_duplicate BOOLEAN DEFAULT false,
+        circumvention_flags JSONB,
+        billing_rate INTEGER,
+        billed BOOLEAN DEFAULT false,
+        billed_at TIMESTAMP,
+        bill_amount INTEGER,
+        detected_at TIMESTAMP DEFAULT NOW(),
+        contacted_at TIMESTAMP,
+        qualified_at TIMESTAMP,
+        transformed_at TIMESTAMP,
+        lost_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
+      CREATE TABLE IF NOT EXISTS "GaeEvent" (
+        id SERIAL PRIMARY KEY,
+        opportunite_id INTEGER NOT NULL,
+        email VARCHAR(64) NOT NULL,
+        event_type VARCHAR(32) NOT NULL,
+        old_value TEXT,
+        new_value TEXT,
+        agent_source VARCHAR(16),
+        human_actor VARCHAR(64),
+        notes TEXT,
+        metadata JSONB,
+        created_at TIMESTAMP DEFAULT NOW()
       )`;
   })();
   return _schemaReady;
@@ -2193,4 +2307,285 @@ export async function getMandatStats(email: string): Promise<{
   const tauxConversion = contactesTotal > 0 ? Math.round((mandatsSigmes / contactesTotal) * 100) : 0;
 
   return { total, nouveaux, contactes, rdv, mandatsSigmes, perdus, prioriteA, commissionEstimee, commissionRealisee, tauxConversion };
+}
+
+// ============================================================
+// GAE — GP-CARS ATTRIBUTION ENGINE
+// ============================================================
+
+const GAE_PREFIXES: Record<string, string> = {
+  achat:       'ACHAT',
+  mandat:      'MANDAT',
+  vente:       'VENTE',
+  garantie:    'GAR',
+  atelier:     'ATELIER',
+  lead:        'LEAD',
+  marketing:   'MKT',
+  financement: 'FIN',
+};
+
+const GAE_BILLING_RATES: Record<string, number> = {
+  achat:       100,
+  mandat:       50,
+  vente:        50,
+  garantie:     30,
+  atelier:      20,
+  lead:         10,
+  marketing:    50,
+  financement:  75,
+};
+
+export interface CreateGaeInput {
+  email: string;
+  type: GaeOpportuniteType;
+  agentSource: GaeAgentSource;
+  title?: string | null;
+  estimatedValue?: number | null;
+  marginEstimated?: number | null;
+  attributionConfidence?: number | null;
+  attributionNotes?: string | null;
+  vehicleId?: number | null;
+  leadId?: number | null;
+  mandatOpportuniteId?: number | null;
+  vehicleMake?: string | null;
+  vehicleModel?: string | null;
+  vehicleYear?: number | null;
+  listingUrl?: string | null;
+}
+
+export async function detectGaeDuplicate(
+  email: string,
+  make: string | null,
+  model: string | null,
+  year: number | null,
+  listingUrl?: string | null,
+): Promise<{ id: number; gaeId: string } | null> {
+  await ensureSchema();
+  // Check by listing URL first (exact match)
+  if (listingUrl) {
+    const byUrl = await getDb()
+      .select({ id: gaeOpportunite.id, gaeId: gaeOpportunite.gaeId })
+      .from(gaeOpportunite)
+      .where(and(eq(gaeOpportunite.email, email), eq(gaeOpportunite.listingUrl, listingUrl)))
+      .limit(1);
+    if (byUrl.length > 0) return byUrl[0];
+  }
+  // Check by make/model/year within 60 days
+  if (make && model) {
+    const since = new Date(Date.now() - 60 * 86400000);
+    const conditions = [
+      eq(gaeOpportunite.email, email),
+      eq(gaeOpportunite.vehicleMake, make),
+      eq(gaeOpportunite.vehicleModel, model),
+    ];
+    if (year) conditions.push(eq(gaeOpportunite.vehicleYear, year));
+    const byVehicle = await getDb()
+      .select({ id: gaeOpportunite.id, gaeId: gaeOpportunite.gaeId })
+      .from(gaeOpportunite)
+      .where(and(...conditions))
+      .orderBy(desc(gaeOpportunite.createdAt))
+      .limit(1);
+    if (byVehicle.length > 0 && byVehicle[0].id) {
+      // Check it's recent
+      const rec = await getDb().select().from(gaeOpportunite).where(eq(gaeOpportunite.id, byVehicle[0].id)).limit(1);
+      if (rec[0] && new Date(rec[0].createdAt!) > since) return byVehicle[0];
+    }
+  }
+  return null;
+}
+
+export async function createGaeOpportunite(input: CreateGaeInput): Promise<GaeOpportuniteRecord> {
+  await ensureSchema();
+
+  // Circumvention check
+  const flags: string[] = [];
+  if (!input.vehicleId && !input.leadId && !input.mandatOpportuniteId) {
+    flags.push('no_linked_entity');
+  }
+
+  const billingRate = GAE_BILLING_RATES[input.type] ?? 0;
+  const commissionEstimated = billingRate;
+
+  // Insert with a placeholder gaeId, then update with real ID
+  const rows = await getDb().insert(gaeOpportunite).values({
+    gaeId:                 'PENDING',
+    email:                 input.email,
+    type:                  input.type,
+    agentSource:           input.agentSource,
+    title:                 input.title ?? null,
+    attributionConfidence: input.attributionConfidence ?? 100,
+    attributionNotes:      input.attributionNotes ?? null,
+    estimatedValue:        input.estimatedValue ?? null,
+    marginEstimated:       input.marginEstimated ?? null,
+    commissionEstimated,
+    vehicleId:             input.vehicleId ?? null,
+    leadId:                input.leadId ?? null,
+    mandatOpportuniteId:   input.mandatOpportuniteId ?? null,
+    vehicleMake:           input.vehicleMake ?? null,
+    vehicleModel:          input.vehicleModel ?? null,
+    vehicleYear:           input.vehicleYear ?? null,
+    listingUrl:            input.listingUrl ?? null,
+    isDuplicate:           false,
+    circumventionFlags:    flags.length > 0 ? flags : null,
+    billingRate,
+  }).returning();
+
+  const record = rows[0];
+  const year = new Date().getFullYear();
+  const prefix = GAE_PREFIXES[input.type] ?? 'OPP';
+  const gaeId = `${prefix}-${year}-${String(record.id).padStart(6, '0')}`;
+
+  await getDb().update(gaeOpportunite).set({ gaeId }).where(eq(gaeOpportunite.id, record.id));
+
+  // Log creation event
+  await getDb().insert(gaeEvent).values({
+    opportuniteId: record.id,
+    email:         input.email,
+    eventType:     'detectee',
+    newValue:      gaeId,
+    agentSource:   input.agentSource,
+    notes:         `Opportunité créée par ${input.agentSource}`,
+    metadata:      { type: input.type, title: input.title },
+  });
+
+  return { ...record, gaeId };
+}
+
+export async function updateGaeOpportunite(
+  id: number,
+  email: string,
+  update: Partial<{
+    status: GaeStatus;
+    realValue: number;
+    marginReal: number;
+    commissionReal: number;
+    attributionConfidence: number;
+    billed: boolean;
+    billedAt: Date;
+    billAmount: number;
+    contactedAt: Date;
+    qualifiedAt: Date;
+    transformedAt: Date;
+    lostAt: Date;
+  }>,
+  humanActor?: string,
+): Promise<void> {
+  await ensureSchema();
+  const old = await getDb().select().from(gaeOpportunite).where(and(eq(gaeOpportunite.id, id), eq(gaeOpportunite.email, email))).limit(1);
+  if (!old[0]) return;
+
+  await getDb().update(gaeOpportunite).set({ ...update, updatedAt: new Date() }).where(and(eq(gaeOpportunite.id, id), eq(gaeOpportunite.email, email)));
+
+  if (update.status && update.status !== old[0].status) {
+    await getDb().insert(gaeEvent).values({
+      opportuniteId: id,
+      email,
+      eventType:  'status_change',
+      oldValue:   old[0].status ?? null,
+      newValue:   update.status,
+      humanActor: humanActor ?? null,
+    });
+  }
+}
+
+export async function getGaeOpportunites(email: string, type?: GaeOpportuniteType, status?: GaeStatus, limit = 100): Promise<GaeOpportuniteRecord[]> {
+  await ensureSchema();
+  const conditions = [eq(gaeOpportunite.email, email)];
+  if (type)   conditions.push(eq(gaeOpportunite.type, type));
+  if (status) conditions.push(eq(gaeOpportunite.status, status));
+  return await getDb().select().from(gaeOpportunite).where(and(...conditions)).orderBy(desc(gaeOpportunite.createdAt)).limit(limit);
+}
+
+export async function getGaeOpportunite(id: number, email: string): Promise<GaeOpportuniteRecord | null> {
+  await ensureSchema();
+  const rows = await getDb().select().from(gaeOpportunite).where(and(eq(gaeOpportunite.id, id), eq(gaeOpportunite.email, email))).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getGaeHistory(opportuniteId: number, email: string): Promise<GaeEventRecord[]> {
+  await ensureSchema();
+  return await getDb().select().from(gaeEvent).where(and(eq(gaeEvent.opportuniteId, opportuniteId), eq(gaeEvent.email, email))).orderBy(desc(gaeEvent.createdAt));
+}
+
+export async function getGaeStats(email: string): Promise<{
+  total: number;
+  byType: Record<string, number>;
+  byStatus: Record<string, number>;
+  byAgent: Record<string, number>;
+  transformedCount: number;
+  transformationRate: number;
+  commissionEstimee: number;
+  commissionRealisee: number;
+  circumventionCount: number;
+  duplicateCount: number;
+  highConfidenceCount: number;
+}> {
+  await ensureSchema();
+  const all = await getDb().select().from(gaeOpportunite).where(eq(gaeOpportunite.email, email));
+
+  const byType: Record<string, number>   = {};
+  const byStatus: Record<string, number> = {};
+  const byAgent: Record<string, number>  = {};
+  let transformedCount = 0;
+  let commissionEstimee = 0;
+  let commissionRealisee = 0;
+  let circumventionCount = 0;
+  let duplicateCount = 0;
+  let highConfidenceCount = 0;
+
+  for (const o of all) {
+    byType[o.type ?? ''] = (byType[o.type ?? ''] ?? 0) + 1;
+    byStatus[o.status ?? ''] = (byStatus[o.status ?? ''] ?? 0) + 1;
+    byAgent[o.agentSource ?? ''] = (byAgent[o.agentSource ?? ''] ?? 0) + 1;
+    if (o.status === 'transformee') transformedCount++;
+    commissionEstimee += o.commissionEstimated ?? 0;
+    commissionRealisee += o.commissionReal ?? 0;
+    if (Array.isArray(o.circumventionFlags) && (o.circumventionFlags as string[]).length > 0) circumventionCount++;
+    if (o.isDuplicate) duplicateCount++;
+    if ((o.attributionConfidence ?? 0) >= 75) highConfidenceCount++;
+  }
+
+  const total = all.length;
+  const transformationRate = total > 0 ? Math.round((transformedCount / total) * 100) : 0;
+
+  return { total, byType, byStatus, byAgent, transformedCount, transformationRate, commissionEstimee, commissionRealisee, circumventionCount, duplicateCount, highConfidenceCount };
+}
+
+export async function getGaeReport(email: string): Promise<{
+  agent: string;
+  total: number;
+  transformed: number;
+  rate: number;
+  commissionEstimee: number;
+  commissionRealisee: number;
+  avgConfidence: number;
+}[]> {
+  await ensureSchema();
+  const all = await getDb().select().from(gaeOpportunite).where(eq(gaeOpportunite.email, email));
+
+  const agents: Record<string, {
+    total: number; transformed: number;
+    commissionEstimee: number; commissionRealisee: number;
+    confidenceSum: number;
+  }> = {};
+
+  for (const o of all) {
+    const src = o.agentSource ?? 'unknown';
+    if (!agents[src]) agents[src] = { total: 0, transformed: 0, commissionEstimee: 0, commissionRealisee: 0, confidenceSum: 0 };
+    agents[src].total++;
+    if (o.status === 'transformee') agents[src].transformed++;
+    agents[src].commissionEstimee  += o.commissionEstimated ?? 0;
+    agents[src].commissionRealisee += o.commissionReal ?? 0;
+    agents[src].confidenceSum      += o.attributionConfidence ?? 0;
+  }
+
+  return Object.entries(agents).map(([agent, v]) => ({
+    agent,
+    total: v.total,
+    transformed: v.transformed,
+    rate: v.total > 0 ? Math.round((v.transformed / v.total) * 100) : 0,
+    commissionEstimee: v.commissionEstimee,
+    commissionRealisee: v.commissionRealisee,
+    avgConfidence: v.total > 0 ? Math.round(v.confidenceSum / v.total) : 0,
+  })).sort((a, b) => b.commissionEstimee - a.commissionEstimee);
 }

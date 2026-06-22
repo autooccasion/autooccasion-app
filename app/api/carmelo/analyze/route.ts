@@ -6,6 +6,7 @@ import { selectRelevant, buildMemoryBlock, buildStatsBlock } from '@/lib/carmelo
 import { parseReport } from '@/lib/carmelo/parse';
 import { auth } from 'app/auth';
 import { saveAnalysis, getVehiclesForMemory, createVehicle, saveControllerResult, getVehicleSummaries } from 'app/db';
+import { trackOpportunite } from '@/lib/attribution';
 import { computeMakeStats } from '@/lib/agents/analytics';
 import { runHardRules } from '@/lib/agents/controller/system-prompt';
 import type { VehicleSummary } from '@/lib/agents/shared-types';
@@ -175,6 +176,20 @@ export async function POST(req: NextRequest) {
                 requiresHuman: (parsed.confidence ?? 100) < 85 || hasBlocker,
                 flags,
                 notes: hasBlocker ? 'Bloqué par règles dures — validation manuelle requise.' : '',
+              });
+
+              // GAE — Attribution tracking (fire-and-forget)
+              trackOpportunite({
+                email,
+                type: 'achat',
+                agentSource: 'carmelo',
+                title: `${vehicule} — ${parsed.decision ?? 'INCONNU'}`,
+                estimatedValue: parsed.recommendedMaxBuy ?? undefined,
+                marginEstimated: parsed.estimatedMargin ?? undefined,
+                attributionConfidence: parsed.confidence ?? 100,
+                vehicleMake: parsed.make ?? undefined,
+                vehicleId: newVehicle.id,
+                listingUrl: url || undefined,
               });
             }
           } catch (err) {

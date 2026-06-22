@@ -39,6 +39,12 @@ export type MandatRentabilite = 'faible' | 'correcte' | 'bonne' | 'excellente';
 export type ContactCanal      = 'sms' | 'whatsapp' | 'email' | 'telephone' | 'messenger';
 export type ContactResultat   = 'interesse' | 'negatif' | 'pas_reponse' | 'rdv_fixe' | 'mandat_signe';
 
+// GAE types
+export type GaeOpportuniteType = 'achat' | 'mandat' | 'vente' | 'garantie' | 'atelier' | 'lead' | 'marketing' | 'financement';
+export type GaeAgentSource     = 'carmelo' | 'mandats' | 'madore' | 'garantie' | 'atelier' | 'marketing' | 'manuel';
+export type GaeStatus          = 'detectee' | 'contactee' | 'qualifiee' | 'rdv' | 'negociation' | 'transformee' | 'perdue' | 'annulee';
+export type ConfidenceScore    = 0 | 25 | 50 | 75 | 100;
+
 // Lightweight vehicle summary passed between agents.
 export type VehicleSummary = {
   id: number;

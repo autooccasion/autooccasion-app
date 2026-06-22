@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { getStockVehicles, saveLead, saveDemandSignal } from 'app/db';
+import { trackOpportunite } from '@/lib/attribution';
 import { buildMadoreSystemPrompt } from '@/lib/madore/system-prompt';
 import { matchStock, formatStockForPrompt } from '@/lib/madore/stock-match';
 import { parseMadoreReport } from '@/lib/madore/parse-report';
@@ -82,6 +83,19 @@ export async function POST(req: NextRequest) {
             });
 
             const leadId = saved?.[0]?.id ?? null;
+
+            // GAE — Attribution tracking (fire-and-forget)
+            if (leadId) {
+              trackOpportunite({
+                email: ownerEmail,
+                type: 'lead',
+                agentSource: 'madore',
+                title: `${report.prospectName ?? 'Prospect'} — ${report.vehicleSearch ?? ''}`,
+                estimatedValue: report.budget ?? undefined,
+                attributionConfidence: 100,
+                leadId,
+              });
+            }
 
             // Persist demand signal for Carmelo (MADORE→Carmelo loop)
             if (report.budget || report.vehicleSearch) {

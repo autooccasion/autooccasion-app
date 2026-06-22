@@ -4,6 +4,7 @@ import {
   createMandatOpportunite, getMandatOpportunites, getMandatOpportunite,
   updateMandatOpportunite, addMandatContact, getMandatContacts, publishEvent,
 } from 'app/db';
+import { trackOpportunite } from '@/lib/attribution';
 import type { MandatStatus, ContactCanal, ContactResultat } from '@/lib/agents/shared-types';
 import { assertBody, optionalString, optionalPositiveInt } from '@/lib/validation';
 
@@ -86,5 +87,20 @@ export async function POST(req: NextRequest) {
     sellerPhone:  optionalString(body.sellerPhone),
   });
   await publishEvent('mandats.opportunite_detectee', 'mandats', { opportuniteId: opp.id }, email);
+
+  // GAE — Attribution tracking (fire-and-forget)
+  trackOpportunite({
+    email,
+    type: 'mandat',
+    agentSource: 'mandats',
+    title: [body.make, body.model, body.year].filter(Boolean).join(' ') || body.listingTitle || 'Mandat VO',
+    estimatedValue: body.askingPrice ?? undefined,
+    vehicleMake: body.make ?? undefined,
+    vehicleModel: body.model ?? undefined,
+    vehicleYear: body.year ?? undefined,
+    listingUrl: body.listingUrl ?? undefined,
+    mandatOpportuniteId: opp.id,
+  });
+
   return NextResponse.json({ ok: true, opportunite: opp });
 }
