@@ -11,16 +11,13 @@ export const authConfig = {
   callbacks: {
     authorized({ auth, request: { nextUrl } }) {
       let isLoggedIn = !!auth?.user;
-      let isOnDashboard =
-        nextUrl.pathname.startsWith('/protected') ||
-        nextUrl.pathname.startsWith('/carmelo') ||
-        nextUrl.pathname.startsWith('/settings') ||
-        nextUrl.pathname.startsWith('/gp');
+      let isOnDashboard = nextUrl.pathname.startsWith('/protected');
+      let isOnCarmelo = nextUrl.pathname.startsWith('/carmelo');
 
       if (isOnDashboard) {
         if (isLoggedIn) return true;
         return false; // Redirect unauthenticated users to login page
-      } else if (isLoggedIn) {
+      } else if (isLoggedIn && !isOnCarmelo) {
         return Response.redirect(new URL('/protected', nextUrl));
       }
 
