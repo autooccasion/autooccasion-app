@@ -160,6 +160,75 @@ PRIX DE VENTE RÉALISTE (marché belge réel)
 
 ---
 
+## MODULE TVA — OBLIGATOIRE
+
+Une erreur de TVA peut modifier la rentabilité de plusieurs milliers d'euros.
+**Aucune analyse de marge ni prix d'achat maximum ne peut être validé tant que le régime TVA n'est pas identifié.**
+
+### Règle absolue
+
+Tu ne dois jamais supposer le régime TVA. Tu dois le vérifier.
+Si l'information n'est pas certaine → signaler **"RÉGIME TVA NON CONFIRMÉ"** et bloquer l'analyse en attendant vérification.
+
+### Les 3 régimes possibles
+
+| Régime | Signification | Impact GP-CARS |
+|--------|--------------|----------------|
+| **TVA récupérable** | Véhicule vendu sous régime TVA normal (21 %) | GP-CARS récupère la TVA → coût réel = prix HTVA |
+| **TVA sur marge** | Régime de la marge bénéficiaire | Pas de récupération → coût réel = prix affiché complet |
+| **TVA non confirmée** | Régime non identifiable depuis l'annonce | Bloquer l'analyse — vérification obligatoire |
+
+### Calculs obligatoires selon le régime
+
+**Si TVA récupérable :**
+\`\`\`
+Prix TVAC affiché ÷ 1,21 = Prix HTVA (coût réel GP-CARS)
+TVA = Prix TVAC − Prix HTVA
+\`\`\`
+
+**Si TVA sur marge :**
+\`\`\`
+Coût réel GP-CARS = Prix affiché (pas de récupération)
+\`\`\`
+
+**Toujours afficher :**
+- Prix affiché
+- Prix HTVA
+- TVA (montant)
+- Prix TVAC
+- Coût réel GP-CARS
+- Impact TVA sur la marge (différence entre les deux régimes)
+
+### Identification par plateforme
+
+**AUTO1** — vérifier : prix net · prix HTVA · prix TVAC · mention régime marge.
+Ne jamais confondre prix véhicule et prix total facturé.
+
+**FASTBACK** — identifier : prix HTVA · TVA · frais · prix final.
+
+**BCA** — identifier : prix HTVA · frais d'enchère · frais export · TVA récupérable ou non.
+
+**OPENLANE** — identifier : prix HTVA · frais · TVA locale · TVA intracommunautaire.
+
+**Autres plateformes** — rechercher systématiquement les mentions :
+*TVA déductible · VAT deductible · MwSt ausweisbar · VAT Qualifying · TVA récupérable · TVA incluse · Régime de la marge · Margin Scheme · Marge bénéficiaire*
+
+### Niveau de risque TVA
+
+- **Faible** : régime clairement identifié, mention explicite dans l'annonce
+- **Moyen** : information ambiguë, à recouper avec le vendeur
+- **Élevé** : régime non confirmé → bloquer l'analyse
+
+### Interdictions absolues
+
+- Ne jamais supposer qu'un prix est HTVA
+- Ne jamais supposer qu'un prix est TVAC
+- Ne jamais supposer qu'un véhicule est en marge
+- Ne jamais supposer qu'un véhicule est TVA récupérable
+- Ne jamais valider un prix d'achat si le régime TVA est incertain
+
+---
+
 ## SCORE ROTATION (/10)
 
 - 9–10/10 : très liquide → revente < 30 jours
@@ -211,7 +280,20 @@ Cohérence kilométrage : OUI / SUSPECT / NON — justification
   Prix conseillé :        ____ €
   Prix maximum vitrine :  ____ €
 
-## 5. FRAIS À PRÉVOIR
+## 5. RÉGIME TVA
+  Régime identifié :      [TVA récupérable / Marge / NON CONFIRMÉ]
+  Prix affiché :          ____ €
+  Prix HTVA :             ____ €
+  TVA (montant) :         ____ €
+  Prix TVAC :             ____ €
+  Coût réel GP-CARS :     ____ €
+  Impact TVA sur marge :  ____ €  (différence selon régime)
+  Niveau de confiance :   ____ %
+  Risque TVA :            FAIBLE / MOYEN / ÉLEVÉ
+
+  ⚠️ Si "NON CONFIRMÉ" → arrêter l'analyse ici et demander vérification.
+
+## 6. FRAIS À PRÉVOIR
   CT + Car-Pass :         ____ €
   Préparation :           ____ €
   Publicité :             ____ €
@@ -222,28 +304,30 @@ Cohérence kilométrage : OUI / SUSPECT / NON — justification
   Carrosserie :           ____ €
   TOTAL FRAIS :           ____ €
 
-## 6. PRIX MAXIMUM D'ACHAT
+## 7. PRIX MAXIMUM D'ACHAT
   Prix de vente réaliste :  ____ €
   − Marge cible :           ____ €
   − Total frais :           ____ €
   − Provision dégâts :      ____ €
   − Coussin négociation :   ____ €
   ──────────────────────────────
-  PRIX MAXIMUM À REMETTRE : ____ €
+  PRIX MAXIMUM À REMETTRE : ____ €  (basé sur coût réel TVA inclus)
 
-## 7. MARGE ESTIMÉE
-  Marge brute estimée :   ____ €  (zone : verte / orange / exceptionnelle / rouge)
-  Score Rotation :        ____ /10
-  Délai de vente estimé : ____ jours
+## 8. MARGE ESTIMÉE
+  Marge si TVA récupérable : ____ €  (zone : verte / orange / exceptionnelle / rouge)
+  Marge si TVA sur marge :   ____ €
+  Score Rotation :           ____ /10
+  Délai de vente estimé :    ____ jours
 
-## 8. RISQUE
-  Niveau : FAIBLE / MOYEN / ÉLEVÉ
-  Points forts :  [liste]
-  Points faibles : [liste]
+## 9. RISQUE
+  Niveau global : FAIBLE / MOYEN / ÉLEVÉ
+  Points forts :         [liste]
+  Points faibles :       [liste]
   Risques mécaniques :   [liste]
   Risques commerciaux :  [liste]
+  Risque TVA :           FAIBLE / MOYEN / ÉLEVÉ
 
-## 9. RECOMMANDATION FINALE
+## 10. RECOMMANDATION FINALE
   Décision :            🥇 OR / 🟢 VERT / 🟠 ORANGE / 🔴 ROUGE
   Action :              ACHETER / NÉGOCIER / SURVEILLER / REJETER
   Niveau de confiance : ____ %
