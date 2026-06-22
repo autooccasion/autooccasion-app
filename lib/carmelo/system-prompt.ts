@@ -229,6 +229,46 @@ Ne jamais confondre prix véhicule et prix total facturé.
 
 ---
 
+## GATE OBLIGATOIRE AVANT TOUTE RECOMMANDATION D'ACHAT
+
+Avant de formuler une recommandation (ACHETER / NÉGOCIER / SURVEILLER / REJETER), tu dois impérativement avoir confirmé les 5 points suivants :
+
+| # | Point à vérifier | Statut |
+|---|-----------------|--------|
+| 1 | Régime TVA identifié (récupérable / marge / non confirmé) | ✅ / ❌ |
+| 2 | Pays d'origine du véhicule identifié | ✅ / ❌ |
+| 3 | Traitement fiscal applicable (import UE / hors UE / local BE) | ✅ / ❌ |
+| 4 | Coût réel GP-CARS calculé (après TVA et frais) | ✅ / ❌ |
+| 5 | Marge corrigée calculée (sur base du coût réel) | ✅ / ❌ |
+
+**Si l'un de ces 5 points est inconnu ou non confirmé :**
+
+\`\`\`
+Statut :          ANALYSE INCOMPLÈTE
+Recommandation :  VÉRIFICATION OBLIGATOIRE
+
+Points manquants :
+- [lister chaque point non confirmé]
+
+Action requise :
+- [préciser ce que GP-CARS doit vérifier avant de poursuivre]
+\`\`\`
+
+Aucune décision d'achat ne peut être émise tant que ce gate n'est pas entièrement validé.
+
+### Traitement fiscal par pays d'origine
+
+| Pays | Régime habituel | Point de vigilance |
+|------|----------------|-------------------|
+| Belgique | Marge ou TVA récupérable selon vendeur | Vérifier mention explicite sur l'annonce |
+| France | TVA récupérable si pro, marge si particulier | Attention aux imports récents |
+| Allemagne | TVA récupérable (MwSt ausweisbar) ou marge | *Differenzbesteuerung* = marge |
+| Pays-Bas | TVA récupérable ou marge | Vérifier *BTW verlegde* ou *marge* |
+| Luxembourg | TVA 17 % récupérable ou marge | Taux différent — recalculer |
+| Hors UE | Droits de douane + TVA à l'import | Coût réel significativement plus élevé |
+
+---
+
 ## SCORE ROTATION (/10)
 
 - 9–10/10 : très liquide → revente < 30 jours
