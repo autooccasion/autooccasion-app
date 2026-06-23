@@ -178,6 +178,42 @@ Si l'information n'est pas certaine → signaler **"RÉGIME TVA NON CONFIRMÉ"**
 | **TVA sur marge** | Régime de la marge bénéficiaire | Pas de récupération → coût réel = prix affiché complet |
 | **TVA non confirmée** | Régime non identifiable depuis l'annonce | Bloquer l'analyse — vérification obligatoire |
 
+### 🚨 CONTRÔLE PRIORITAIRE — Moyen de transport neuf (TVA UE)
+
+Cette règle est **bloquante** et prime sur toute recommandation d'achat.
+
+Un véhicule importé depuis un autre pays UE est considéré comme **neuf au sens TVA UE** s'il remplit **au moins une** des conditions suivantes :
+- Moins de **6 mois** depuis la première mise en circulation
+- Moins de **6 000 km**
+
+**Si l'une de ces conditions est remplie :**
+
+\`\`\`
+🚨 ALERTE TVA UE — MOYEN DE TRANSPORT NEUF
+
+Ce véhicule est potentiellement soumis aux règles TVA spécifiques
+aux échanges intracommunautaires (Directive 2006/112/CE).
+
+Risque fiscal : la TVA belge (21%) peut être due à l'importation
+même si le vendeur a appliqué une TVA étrangère.
+
+→ DOSSIER TVA NON SÉCURISÉ
+→ VALIDATION HUMAINE OBLIGATOIRE
+→ FEU VERT INTERDIT
+\`\`\`
+
+**Pour tout véhicule importé (même hors critères "neuf"), vérifier impérativement :**
+1. Date de première mise en circulation
+2. Kilométrage exact
+3. Pays d'origine
+4. Régime TVA du vendeur (pro TVA / particulier / marge)
+5. TVA récupérable ou non
+6. Prix HTVA et prix TVAC
+7. TVA applicable dans le pays d'origine
+8. TVA applicable en Belgique
+9. Différentiel de taux entre pays et impact sur la marge
+10. Statut intracommunautaire du vendeur (numéro TVA valide)
+
 ### Calculs obligatoires selon le régime
 
 **Si TVA récupérable :**
@@ -258,14 +294,38 @@ Aucune décision d'achat ne peut être émise tant que ce gate n'est pas entièr
 
 ### Traitement fiscal par pays d'origine
 
-| Pays | Régime habituel | Point de vigilance |
-|------|----------------|-------------------|
-| Belgique | Marge ou TVA récupérable selon vendeur | Vérifier mention explicite sur l'annonce |
-| France | TVA récupérable si pro, marge si particulier | Attention aux imports récents |
-| Allemagne | TVA récupérable (MwSt ausweisbar) ou marge | *Differenzbesteuerung* = marge |
-| Pays-Bas | TVA récupérable ou marge | Vérifier *BTW verlegde* ou *marge* |
-| Luxembourg | TVA 17 % récupérable ou marge | Taux différent — recalculer |
-| Hors UE | Droits de douane + TVA à l'import | Coût réel significativement plus élevé |
+| Pays | Taux TVA | Régime habituel | Point de vigilance |
+|------|----------|----------------|-------------------|
+| Belgique | 21 % | Marge ou TVA récupérable selon vendeur | Vérifier mention explicite sur l'annonce |
+| France | 20 % | TVA récupérable si pro, marge si particulier | Attention aux imports récents |
+| Allemagne | 19 % | TVA récupérable (*MwSt ausweisbar*) ou marge | *Differenzbesteuerung* = marge |
+| Pays-Bas | 21 % | TVA récupérable ou marge | Vérifier *BTW verlegd* ou *marge* |
+| Luxembourg | 17 % | TVA récupérable ou marge | Taux le plus bas UE — recalculer l'impact |
+| Espagne | 21 % | TVA récupérable si pro | Vérifier *IVA deducible* |
+| Italie | 22 % | TVA récupérable si pro | Taux le plus élevé — impact marge significatif |
+| Hors UE | Variable | Droits de douane + TVA belge à l'import | Coût réel très significativement plus élevé |
+
+### Calcul du différentiel de TVA entre pays
+
+**Exemple concret : véhicule allemand affiché 24 000 € TVAC (TVA 19 % récupérable)**
+
+\`\`\`
+Prix TVAC affiché (DE) :     24 000 €
+Prix HTVA (÷ 1,19) :         20 168 €
+TVA allemande (19 %) :        3 832 €
+
+→ GP-CARS récupère :          3 832 €
+→ Coût réel :                20 168 €
+
+Véhicule équivalent belge à 24 000 € TVAC (TVA 21 %) :
+Prix HTVA (÷ 1,21) :         19 835 €
+TVA belge (21 %) :            4 165 €
+
+Différentiel de taux DE vs BE : 2 % → impact ≈ 333 € sur ce véhicule
+\`\`\`
+
+**Toujours calculer les deux scénarios et afficher la différence.**
+Un différentiel de taux entre pays peut représenter **200 à 800 €** sur un véhicule à 20 000 €.
 
 ---
 
