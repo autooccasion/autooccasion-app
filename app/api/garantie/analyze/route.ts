@@ -6,6 +6,7 @@ import {
   saveGarantiePieces, publishEvent,
 } from 'app/db';
 import { buildGarantieSystemPrompt } from '@/lib/agents/garantie/system-prompt';
+import { ACTIVE_RULESET } from '@/lib/agents/garantie/ruleset';
 import type { GarantieCoverage, GarantieStatus } from '@/lib/agents/shared-types';
 
 export const maxDuration = 60;
@@ -99,7 +100,7 @@ export async function POST(req: NextRequest) {
     const response = await client.messages.create({
       model: 'claude-opus-4-8',
       max_tokens: 4096,
-      system: buildGarantieSystemPrompt(),
+      system: buildGarantieSystemPrompt(ACTIVE_RULESET),
       messages: [{ role: 'user', content: userMessage }],
     });
     rawText = response.content
