@@ -112,6 +112,11 @@ const vehicle = pgTable('Vehicle', {
   listingDescription: text('listing_description'),
   listingPoints: json('listing_points').$type<string[]>(),
   listingTags: json('listing_tags').$type<string[]>(),
+  platformDrafts: json('platform_drafts').$type<{
+    autoscout24?: { titre: string; description: string };
+    '2ememain'?: { titre: string; description: string };
+    leboncoin?: { titre: string; description: string };
+  }>(),
   publishedAt: timestamp('published_at'),
   listingExpiresAt: timestamp('listing_expires_at'),
   publishedPlatforms: json('published_platforms').$type<string[]>(),
@@ -604,6 +609,7 @@ function ensureSchema(): Promise<void> {
         real_buy_price INTEGER, bought_at TIMESTAMP,
         listing_title TEXT, listing_description TEXT,
         listing_points JSONB, listing_tags JSONB,
+        platform_drafts JSONB,
         published_at TIMESTAMP, listing_expires_at TIMESTAMP,
         published_platforms JSONB,
         real_sell_price INTEGER, sold_at TIMESTAMP,
@@ -619,6 +625,10 @@ function ensureSchema(): Promise<void> {
     await getClient()`
       ALTER TABLE "Vehicle"
         ADD COLUMN IF NOT EXISTS analysis_feedback VARCHAR(16)`;
+
+    await getClient()`
+      ALTER TABLE "Vehicle"
+        ADD COLUMN IF NOT EXISTS platform_drafts JSONB`;
 
     await getClient()`
       CREATE TABLE IF NOT EXISTS "VehicleEvent" (
@@ -1204,7 +1214,17 @@ export async function updateVehicleStatus(
 export async function saveMarketingDraft(
   id: number,
   email: string,
-  draft: { title: string; description: string; points: string[]; tags: string[] },
+  draft: {
+    title: string;
+    description: string;
+    points: string[];
+    tags: string[];
+    platformDrafts?: {
+      autoscout24?: { titre: string; description: string };
+      '2ememain'?: { titre: string; description: string };
+      leboncoin?: { titre: string; description: string };
+    };
+  },
 ) {
   await ensureSchema();
   return await getDb()
@@ -1214,6 +1234,7 @@ export async function saveMarketingDraft(
       listingDescription: draft.description,
       listingPoints: draft.points,
       listingTags: draft.tags,
+      ...(draft.platformDrafts ? { platformDrafts: draft.platformDrafts } : {}),
       updatedAt: new Date(),
     })
     .where(and(eq(vehicle.id, id), eq(vehicle.email, email)));

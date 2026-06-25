@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { auth } from 'app/auth';
 import { cookies } from 'next/headers';
-import { getVehicle, saveMarketingDraft, updateVehicleStatus } from 'app/db';
-import { buildMarketingSystemPrompt, buildListingUserMessage } from '@/lib/agents/marketing/system-prompt';
+import { getVehicle, saveMarketingDraft } from 'app/db';
+import { buildMarketingSystemPrompt, buildListingUserMessage, type MarketingDraftOutput } from '@/lib/agents/marketing/system-prompt';
 import { requirePositiveInt, optionalString, ValidationError } from '@/lib/validation';
 import { checkRateLimit } from '@/lib/rate-limit';
+
+export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -47,21 +49,21 @@ export async function POST(req: NextRequest) {
     condition: optionalString(rawBody?.condition),
     maintenanceHistory: optionalString(rawBody?.maintenanceHistory),
     warranty: optionalString(rawBody?.warranty),
-    targetSellPrice: row.marketPrice ?? null,
+    targetSellPrice: row.marketPrice ?? row.askingPrice ?? null,
     listingUrl: row.listingUrl,
   });
 
   try {
     const response = await client.messages.create({
-      model: 'claude-haiku-4-5',
-      max_tokens: 1024,
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 2048,
       system: buildMarketingSystemPrompt(),
       messages: [{ role: 'user', content: userMessage }],
     });
 
     const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
 
-    let draft: { titre?: string; description?: string; points_forts?: string[]; tags?: string[] } = {};
+    let draft: Partial<MarketingDraftOutput> = {};
     try {
       draft = JSON.parse(text);
     } catch {
@@ -76,6 +78,11 @@ export async function POST(req: NextRequest) {
       description: draft.description || '',
       points: draft.points_forts || [],
       tags: draft.tags || [],
+      platformDrafts: draft.platforms ? {
+        autoscout24: draft.platforms.autoscout24,
+        '2ememain': draft.platforms['2ememain'],
+        leboncoin: draft.platforms.leboncoin,
+      } : undefined,
     });
 
     return NextResponse.json({ draft });
