@@ -7,6 +7,8 @@ export const ATELIER_CONTRACT = {
   emits: [
     'atelier.intervention_creee',
     'atelier.frais_reels',
+    'atelier.pret_vendre',
+    'atelier.pret_livrer',
     'rdv.confirme',
     'rdv.rappel',
   ] as const,

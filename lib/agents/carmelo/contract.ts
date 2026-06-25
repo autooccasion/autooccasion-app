@@ -9,6 +9,8 @@ export const CARMELO_CONTRACT = {
     'opportunite.vert',
     'opportunite.orange',
     'vehicule.refuse',
+    'vehicule.achete',
+    'vehicule.vendu',
     'analyse.low_confidence',
     // prix.baisse est émis par le Scanner (détection inter-scans), pas par Carmelo
   ] as const,

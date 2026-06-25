@@ -1,12 +1,17 @@
 import { NextResponse } from 'next/server';
-const start = Date.now();
+import { MANDATS_CONTRACT } from '@/lib/agents/mandats/contract';
+
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
-  const hasKey = !!process.env.ANTHROPIC_API_KEY;
+  const start = Date.now();
+  const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
+
   return NextResponse.json({
-    agent: 'mandats',
-    version: '1.0',
-    status: hasKey ? 'ok' : 'degraded',
-    checks: { anthropic_api_key: hasKey },
+    agent:     MANDATS_CONTRACT.name,
+    version:   MANDATS_CONTRACT.version,
+    status:    hasApiKey ? 'online' : 'degraded',
+    checks:    { ANTHROPIC_API_KEY: hasApiKey },
     timestamp: new Date().toISOString(),
     latencyMs: Date.now() - start,
   });
