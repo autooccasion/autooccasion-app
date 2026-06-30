@@ -1,8 +1,12 @@
-import { MARGES, GP_CARS_PARAMS, EXCLUSIONS_ABSOLUES } from '@/lib/carmelo/config';
+import { DEFAULT_GARAGE_CONFIG, type GarageConfig } from '@/lib/carmelo/garage-config';
 import type { VehicleSummary, ControllerFlag } from '../shared-types';
 
-export function buildControllerSystemPrompt(): string {
-  return `Tu es l'Agent Contrôleur de GP-CARS.
+export function buildControllerSystemPrompt(config: GarageConfig = DEFAULT_GARAGE_CONFIG): string {
+  const MARGES = config.margins;
+  const GP_CARS_PARAMS = config.params;
+  const EXCLUSIONS_ABSOLUES = config.exclusionsAbsolues;
+
+  return `Tu es l'Agent Contrôleur de ${config.garageName}.
 Tu es le dernier rempart avant qu'une décision erronée coûte de l'argent au garage.
 
 ## MISSION
@@ -50,7 +54,9 @@ requires_human_validation = true si confiance < ${GP_CARS_PARAMS.seuil_confiance
 }
 
 // Pure rule checks that don't need an LLM call — run these first to save API cost.
-export function runHardRules(vehicle: VehicleSummary): ControllerFlag[] {
+export function runHardRules(vehicle: VehicleSummary, config: GarageConfig = DEFAULT_GARAGE_CONFIG): ControllerFlag[] {
+  const MARGES = config.margins;
+  const GP_CARS_PARAMS = config.params;
   const flags: ControllerFlag[] = [];
 
   if (vehicle.realBuyPrice != null && vehicle.realBuyPrice > GP_CARS_PARAMS.plafond_achat_vehicule) {

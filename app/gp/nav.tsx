@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-type Tab = 'stock' | 'achats' | 'dashboard' | 'leads' | 'training' | 'atelier' | 'garantie' | 'mandats' | 'marketing' | 'system' | 'attribution';
+type Tab = 'stock' | 'achats' | 'dashboard' | 'leads' | 'training' | 'atelier' | 'garantie' | 'mandats' | 'marketing' | 'system' | 'attribution' | 'settings';
 
 const tabs: { key: Tab; label: string; href: string; description: string }[] = [
   { key: 'stock',    label: 'Stock',      href: '/gp/stock',     description: 'Source de vérité' },
@@ -14,6 +14,7 @@ const tabs: { key: Tab; label: string; href: string; description: string }[] = [
   { key: 'marketing', label: 'Marketing',  href: '/gp/marketing',  description: 'Agent Annonces VO' },
   { key: 'system',    label: 'Système',    href: '/gp/system',     description: 'Santé des agents' },
   { key: 'attribution', label: 'Attribution', href: '/gp/attribution', description: 'ROI et traçabilité des agents' },
+  { key: 'settings',    label: 'Réglages',    href: '/gp/settings',    description: 'Configuration du garage' },
 ];
 
 export default function GPNav({ active }: { active: Tab }) {

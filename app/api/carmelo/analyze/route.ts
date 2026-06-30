@@ -5,7 +5,7 @@ import { fetchListing } from '@/lib/carmelo/fetch-listing';
 import { selectRelevant, buildMemoryBlock, buildStatsBlock } from '@/lib/carmelo/memory';
 import { parseReport } from '@/lib/carmelo/parse';
 import { auth } from 'app/auth';
-import { saveAnalysis, getVehiclesForMemory, createVehicle, saveControllerResult, getVehicleSummaries } from 'app/db';
+import { saveAnalysis, getVehiclesForMemory, createVehicle, saveControllerResult, getVehicleSummaries, getGarageConfig } from 'app/db';
 import { trackOpportunite } from '@/lib/attribution';
 import { computeMakeStats } from '@/lib/agents/analytics';
 import { runHardRules } from '@/lib/agents/controller/system-prompt';
@@ -67,6 +67,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Config du garage (défauts = comportement actuel).
+  const config = await getGarageConfig(email);
+
   // 2. Mémoire GP-CARS — cas passés pertinents + statistiques par marque.
   let memoryBlock = '';
   let statsBlock = '';
@@ -107,7 +110,7 @@ export async function POST(req: NextRequest) {
         const messageStream = client.messages.stream({
           model: 'claude-opus-4-8',
           max_tokens: 2048,
-          system: buildCarmeloSystemPrompt(),
+          system: buildCarmeloSystemPrompt(config),
           messages: [{ role: 'user', content: userMessage }],
         });
 
@@ -169,7 +172,7 @@ export async function POST(req: NextRequest) {
                 publishedAt: newVehicle.publishedAt ?? null,
                 soldAt: newVehicle.soldAt ?? null,
               };
-              const flags = runHardRules(summary);
+              const flags = runHardRules(summary, config);
               const hasBlocker = flags.some((f) => f.severity === 'bloquant');
               await saveControllerResult(newVehicle.id, email, {
                 validated: !hasBlocker,

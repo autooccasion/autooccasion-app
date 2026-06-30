@@ -7,6 +7,7 @@ import { genSaltSync, hashSync } from 'bcrypt-ts';
 import { extractDecision } from '@/lib/carmelo/decision';
 import { parseReport } from '@/lib/carmelo/parse';
 import { PLANCHER_FRAIS } from '@/lib/carmelo/config';
+import { mergeGarageConfig, type GarageConfig, type GarageConfigOverrides } from '@/lib/carmelo/garage-config';
 import type {
   VehicleStatus, AgentDecision, ControllerFlag, VehicleSummary,
   AtelierInterventionStatus, AtelierInterventionType, PieceStatus, RdvType, RdvStatus,
@@ -38,6 +39,15 @@ const users = pgTable('User', {
   id: serial('id').primaryKey(),
   email: varchar('email', { length: 64 }),
   password: varchar('password', { length: 64 }),
+});
+
+// Configuration métier par garage (multi-tenant — tenant = email).
+// `overrides` est un blob JSON partiel fusionné sur DEFAULT_GARAGE_CONFIG.
+const garageConfig = pgTable('GarageConfig', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 64 }).notNull(),
+  overrides: jsonb('overrides').$type<GarageConfigOverrides>(),
+  updatedAt: timestamp('updated_at').defaultNow(),
 });
 
 const carmeloAnalysis = pgTable('CarmeloAnalysis', {
@@ -551,6 +561,14 @@ function ensureSchema(): Promise<void> {
       )`;
 
     await getClient()`
+      CREATE TABLE IF NOT EXISTS "GarageConfig" (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(64) NOT NULL,
+        overrides JSONB,
+        updated_at TIMESTAMP DEFAULT NOW()
+      )`;
+
+    await getClient()`
       CREATE TABLE IF NOT EXISTS "CarmeloAnalysis" (
         id SERIAL PRIMARY KEY,
         email VARCHAR(64),
@@ -983,6 +1001,61 @@ export async function createUser(email: string, password: string) {
   const salt = genSaltSync(10);
   const hash = hashSync(password, salt);
   return await getDb().insert(users).values({ email, password: hash });
+}
+
+// ============================================================
+// GARAGE CONFIG — configuration métier par tenant (email)
+// ============================================================
+
+/**
+ * Renvoie la configuration complète (défauts + overrides) pour un garage.
+ * Un garage sans overrides reçoit DEFAULT_GARAGE_CONFIG (comportement actuel).
+ * Ne lève jamais : en cas d'erreur DB, retombe sur les défauts.
+ */
+export async function getGarageConfig(email: string): Promise<GarageConfig> {
+  try {
+    await ensureSchema();
+    const rows = await getDb()
+      .select({ overrides: garageConfig.overrides })
+      .from(garageConfig)
+      .where(eq(garageConfig.email, email))
+      .orderBy(desc(garageConfig.updatedAt))
+      .limit(1);
+    return mergeGarageConfig(rows[0]?.overrides ?? null);
+  } catch (err) {
+    console.error('getGarageConfig: fallback défauts', err);
+    return mergeGarageConfig(null);
+  }
+}
+
+/** Renvoie uniquement les overrides bruts d'un garage (pour pré-remplir l'écran settings). */
+export async function getGarageConfigOverrides(email: string): Promise<GarageConfigOverrides | null> {
+  await ensureSchema();
+  const rows = await getDb()
+    .select({ overrides: garageConfig.overrides })
+    .from(garageConfig)
+    .where(eq(garageConfig.email, email))
+    .orderBy(desc(garageConfig.updatedAt))
+    .limit(1);
+  return rows[0]?.overrides ?? null;
+}
+
+/** Enregistre (upsert) les overrides de config d'un garage. */
+export async function saveGarageConfig(email: string, overrides: GarageConfigOverrides): Promise<void> {
+  await ensureSchema();
+  const existing = await getDb()
+    .select({ id: garageConfig.id })
+    .from(garageConfig)
+    .where(eq(garageConfig.email, email))
+    .limit(1);
+  if (existing[0]) {
+    await getDb()
+      .update(garageConfig)
+      .set({ overrides, updatedAt: new Date() })
+      .where(eq(garageConfig.id, existing[0].id));
+  } else {
+    await getDb().insert(garageConfig).values({ email, overrides, updatedAt: new Date() });
+  }
 }
 
 // ============================================================

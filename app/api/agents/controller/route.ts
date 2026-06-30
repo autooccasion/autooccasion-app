@@ -2,11 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { auth } from 'app/auth';
 import { cookies } from 'next/headers';
-import { getVehicle, saveControllerResult, getVehicleSummaries } from 'app/db';
+import { getVehicle, saveControllerResult, getVehicleSummaries, getGarageConfig } from 'app/db';
 import { buildControllerSystemPrompt, runHardRules } from '@/lib/agents/controller/system-prompt';
 import type { VehicleSummary } from '@/lib/agents/shared-types';
 import { computeSurstockRisk, computeBudgetDisponible } from '@/lib/agents/analytics';
-import { GP_CARS_PARAMS } from '@/lib/carmelo/config';
 import { requirePositiveInt, ValidationError } from '@/lib/validation';
 import { checkRateLimit } from '@/lib/rate-limit';
 
@@ -54,6 +53,9 @@ export async function POST(req: NextRequest) {
     soldAt: row.soldAt ?? null,
   };
 
+  // Config du garage (défauts = comportement actuel).
+  const config = await getGarageConfig(email);
+
   // 0. TTL — analyse de plus de 72h → avertissement (prix de marché potentiellement périmé).
   const analysisAgeMs = row.createdAt ? Date.now() - new Date(row.createdAt).getTime() : 0;
   const ttlFlag = analysisAgeMs > 72 * 3_600_000
@@ -78,7 +80,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const budget = computeBudgetDisponible(summaries, GP_CARS_PARAMS.budget_max_jour);
+    const budget = computeBudgetDisponible(summaries, config.params.budget_max_jour);
     if (budget.isExhausted) {
       contextFlags.push({
         code: 'BUDGET_JOURNALIER_EPUISE',
@@ -97,7 +99,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 1b. Règles dures — synchrones, sans LLM.
-  const hardFlags = [...ttlFlag, ...contextFlags, ...runHardRules(summary)];
+  const hardFlags = [...ttlFlag, ...contextFlags, ...runHardRules(summary, config)];
   const hasBlocker = hardFlags.some((f) => f.severity === 'bloquant');
 
   let llmFlags: { code: string; severity: string; message: string }[] = [];
@@ -125,7 +127,7 @@ export async function POST(req: NextRequest) {
       const response = await client.messages.create({
         model: 'claude-haiku-4-5',
         max_tokens: 512,
-        system: buildControllerSystemPrompt(),
+        system: buildControllerSystemPrompt(config),
         messages: [{ role: 'user', content: userMessage }],
       });
       const text = response.content[0]?.type === 'text' ? response.content[0].text : '{}';

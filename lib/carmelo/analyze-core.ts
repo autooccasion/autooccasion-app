@@ -7,7 +7,7 @@ import { buildCarmeloSystemPrompt } from './system-prompt';
 import { fetchListing } from './fetch-listing';
 import { selectRelevant, buildMemoryBlock, buildStatsBlock } from './memory';
 import { parseReport } from './parse';
-import { saveAnalysis, getVehiclesForMemory, createVehicle, saveControllerResult, getVehicleSummaries, buildDemandBlock, recordPricePoint, getLastKnownPrice } from 'app/db';
+import { saveAnalysis, getVehiclesForMemory, createVehicle, saveControllerResult, getVehicleSummaries, buildDemandBlock, recordPricePoint, getLastKnownPrice, getGarageConfig } from 'app/db';
 import { computeMakeStats } from '@/lib/agents/analytics';
 import { runHardRules } from '@/lib/agents/controller/system-prompt';
 import { emit } from '@/lib/events/publish';
@@ -37,11 +37,12 @@ export async function runCarmeloAnalysis(
     return { ok: false, error: listing.error || 'Impossible de lire le lien.' };
   }
 
-  // 2. Memory, stats & demand context.
+  // 2. Memory, stats, demand context & garage config.
   let memoryBlock = '';
   let statsBlock = '';
   let demandBlock = '';
   let priceDropNote = '';
+  const config = await getGarageConfig(email);
   try {
     const [past, summaries, demand, lastPrice] = await Promise.all([
       getVehiclesForMemory(email, 40),
@@ -82,7 +83,7 @@ export async function runCarmeloAnalysis(
     const response = await client.messages.create({
       model: 'claude-opus-4-8',
       max_tokens: 2048,
-      system: buildCarmeloSystemPrompt(),
+      system: buildCarmeloSystemPrompt(config),
       messages: [{ role: 'user', content: parts.join('\n\n') }],
     });
     full = response.content[0]?.type === 'text' ? response.content[0].text : '';
@@ -141,7 +142,7 @@ export async function runCarmeloAnalysis(
       publishedAt: newVehicle.publishedAt ?? null,
       soldAt: newVehicle.soldAt ?? null,
     };
-    const flags = runHardRules(summary);
+    const flags = runHardRules(summary, config);
     const hasBlocker = flags.some((f) => f.severity === 'bloquant');
     await saveControllerResult(newVehicle.id, email, {
       validated: !hasBlocker,

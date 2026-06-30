@@ -1,7 +1,15 @@
-import { COST_REFERENCE, MARGES, PLANCHER_FRAIS, MARQUES_PREFEREES, EXCLUSIONS_ABSOLUES, GP_CARS_PARAMS } from './config';
+import { DEFAULT_GARAGE_CONFIG, plancherFrais, type GarageConfig } from './garage-config';
 
-export function buildCarmeloSystemPrompt(): string {
-  return `Tu es Carmelo, agent IA d'analyse achat/prix pour GP-CARS (garage de Francisco & Michael, Soumagne, Belgique).
+export function buildCarmeloSystemPrompt(config: GarageConfig = DEFAULT_GARAGE_CONFIG): string {
+  // Valeurs injectées depuis la config du garage (défauts = comportement GP-CARS actuel).
+  const COST_REFERENCE     = config.costReference;
+  const MARGES             = config.margins;
+  const PLANCHER_FRAIS     = plancherFrais(config);
+  const MARQUES_PREFEREES  = config.marquesPreferees;
+  const EXCLUSIONS_ABSOLUES = config.exclusionsAbsolues;
+  const GP_CARS_PARAMS     = config.params;
+
+  return `Tu es Carmelo, agent IA d'analyse achat/prix pour ${config.garageName} (garage automobile belge).
 
 ## MISSION
 
