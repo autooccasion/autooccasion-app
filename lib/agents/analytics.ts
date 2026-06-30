@@ -195,3 +195,115 @@ export function computePerformanceKPIs(
     weeklyBuyTarget,
   };
 }
+
+// ============================================================
+// PREUVE — « Carmelo vs Réalité »
+// Confronte les estimations de l'agent aux résultats réels.
+// C'est l'outil de preuve de valeur (rétention SaaS) : il démontre,
+// chiffres en main, que l'agent a eu raison.
+// ============================================================
+
+export type ProofMetrics = {
+  // Précision de la marge estimée
+  soldWithEstimate: number;          // véhicules vendus avec marge estimée ET réelle
+  avgEstimatedMargin: number | null;
+  avgRealMargin: number | null;
+  marginMae: number | null;          // erreur absolue moyenne en €
+  marginHitRate: number | null;      // % de véhicules où |estimé − réel| ≤ tolérance
+  marginTolerance: number;           // tolérance utilisée (€)
+
+  // Discipline d'achat — le prix réel a-t-il respecté le plafond Carmelo ?
+  buyDisciplineCount: number;        // véhicules achetés avec prix réel ET plafond
+  buyDisciplineRespected: number;    // dont realBuyPrice ≤ maxBuyPrice
+  buyDisciplinePct: number | null;
+
+  // Pertes évitées — décisions ROUGE (refus)
+  refusedCount: number;
+  estimatedLossAvoided: number | null; // somme des marges estimées négatives sur refus
+
+  // Résultat des décisions positives
+  greenBought: number;               // OR/VERT effectivement achetés
+  greenSold: number;                 // dont vendus
+  greenWinRatePct: number | null;    // vendus / achetés (décisions positives)
+
+  // Valeur générée
+  totalRealMargin: number;           // marge réelle cumulée (véhicules vendus)
+
+  // Couverture des données (honnêteté)
+  hasEnoughData: boolean;            // assez de véhicules vendus pour être crédible
+};
+
+function isPositiveDecision(d: string): boolean {
+  return d === 'OR' || d === 'VERT';
+}
+
+export function computeProofMetrics(
+  vehicles: VehicleSummary[],
+  marginTolerance = 500,
+  minSampleForCredibility = 5,
+): ProofMetrics {
+  const sold = vehicles.filter((v) => v.status === 'vendu');
+
+  // --- Précision marge ---
+  const soldWithEstimate = sold.filter(
+    (v) => v.estimatedMargin != null && v.realMargin != null,
+  );
+  const absErrors = soldWithEstimate.map((v) =>
+    Math.abs((v.estimatedMargin as number) - (v.realMargin as number)),
+  );
+  const marginHits = soldWithEstimate.filter(
+    (v) => Math.abs((v.estimatedMargin as number) - (v.realMargin as number)) <= marginTolerance,
+  );
+
+  // --- Discipline d'achat ---
+  const bought = vehicles.filter((v) =>
+    ['achete', 'en_stock', 'publie', 'vendu'].includes(v.status),
+  );
+  const withBuyPrices = bought.filter(
+    (v) => v.realBuyPrice != null && v.maxBuyPrice != null,
+  );
+  const respected = withBuyPrices.filter(
+    (v) => (v.realBuyPrice as number) <= (v.maxBuyPrice as number),
+  );
+
+  // --- Pertes évitées (refus) ---
+  const refused = vehicles.filter((v) => v.status === 'refuse' || v.decision === 'ROUGE');
+  const lossAvoided = refused
+    .map((v) => v.estimatedMargin)
+    .filter((m): m is number => m != null && m < 0)
+    .reduce((s, m) => s + Math.abs(m), 0);
+
+  // --- Décisions positives ---
+  const greenBought = bought.filter((v) => isPositiveDecision(v.decision));
+  const greenSold = greenBought.filter((v) => v.status === 'vendu');
+
+  return {
+    soldWithEstimate: soldWithEstimate.length,
+    avgEstimatedMargin: avg(soldWithEstimate.map((v) => v.estimatedMargin as number)),
+    avgRealMargin: avg(soldWithEstimate.map((v) => v.realMargin as number)),
+    marginMae: avg(absErrors),
+    marginHitRate: soldWithEstimate.length > 0
+      ? Math.round((marginHits.length / soldWithEstimate.length) * 100)
+      : null,
+    marginTolerance,
+
+    buyDisciplineCount: withBuyPrices.length,
+    buyDisciplineRespected: respected.length,
+    buyDisciplinePct: withBuyPrices.length > 0
+      ? Math.round((respected.length / withBuyPrices.length) * 100)
+      : null,
+
+    refusedCount: refused.length,
+    estimatedLossAvoided: refused.length > 0 ? lossAvoided : null,
+
+    greenBought: greenBought.length,
+    greenSold: greenSold.length,
+    greenWinRatePct: greenBought.length > 0
+      ? Math.round((greenSold.length / greenBought.length) * 100)
+      : null,
+
+    totalRealMargin: sold.reduce((s, v) => s + (v.realMargin ?? 0), 0),
+
+    hasEnoughData: sold.length >= minSampleForCredibility,
+  };
+}
