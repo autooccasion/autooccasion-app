@@ -11,7 +11,9 @@
 | Agent | Innovation | Valeur co. | Différenciation | Facilité de vente | Rentabilité client | Faisabilité | Potentiel SaaS | **Moyenne** |
 |-------|:---------:|:----------:|:---------------:|:-----------------:|:------------------:|:-----------:|:--------------:|:-----------:|
 | **Carmelo (Achats)** | 7 | 9 | 8 | 6 | 9 | 8 | 8 | **7,75** |
+| **Mandats (Sourcing)** | 8 | 8 | **9** | 6 | 8 | 7 | 7 | **7,6** |
 | **Marketing (Annonces)** | 6 | 7 | 6 | **9** | 7 | 9 | 7 | **7,3** |
+| **MADORE (Commercial)** | 7 | 8 | 6 | 7 | 7 | 8 | 7 | **7,1** |
 | **Garantie (SAV)** | 8 | 7 | **9** | 5 | 8 | 7 | 6 | **7,1** |
 | **Contrôleur (Qualité)** | 5 | 8 | 6 | 3* | 9 | 9 | 5* | **6,4** |
 | **Atelier (Méca/RDV)** | 3 | 5 | 3 | 4 | 5 | 9 | 4 | **4,7** |
@@ -21,8 +23,11 @@
 **Lecture stratégique :**
 - **Produit d'appel = Marketing** (démo la plus facile, valeur immédiatement perçue).
 - **Cœur de valeur = Carmelo** (ce qui justifie le prix).
-- **Différenciateur premium = Garantie** (à vendre en add-on « tranquillité »).
-- **Confiance transversale = Contrôleur** (jamais vendu seul, mais c'est lui qui rend la plateforme crédible).
+- **Le vrai différenciateur = le trio d'acquisition Mandats + Carmelo + MADORE** : Mandats trouve le
+  stock sans capital, MADORE capte la demande, Carmelo achète juste. **Le sourcing est LE goulot du
+  VO** — l'attaquer est plus différenciant que n'importe quelle analyse de prix.
+- **Différenciateur premium = Garantie** (add-on « tranquillité »).
+- **Confiance transversale = Contrôleur** (jamais vendu seul, rend la plateforme crédible).
 - **Plomberie d'écosystème = Atelier** (faible seul, essentiel pour boucler estimé→réel).
 
 ---
@@ -217,6 +222,132 @@ Innovation 5 · Valeur 8 · Différenciation 6 · Vente (standalone) 3 · Rentab
 Le **rendre visible** : badge « Vérifié » + journal de blocages chiffré (réutilise le tableau de
 preuve). Ajouter la cohérence inter-agents. Calibrer les seuils par garage (multi-tenant). Ne jamais
 le packager comme produit — c'est le **socle de confiance** de toute la suite.
+
+---
+
+## 5. Agent MADORE — Commercial & Qualification
+
+### Mission & valeur
+Chatbot **public 24/7** sur le site du garage (Claude Haiku — rapide/économique) : dialogue avec le
+visiteur, propose le **stock en temps réel**, score le lead (0-100 + priorité ROUGE/ORANGE/VERT) et
+**alerte immédiatement** sur les prospects chauds. Valeur : **capter les leads qui se perdent hors
+horaires** (une grande partie du shopping auto se fait le soir/week-end, garage fermé) et **réagir
+vite** (la vitesse de réponse est le facteur n°1 de conversion en vente automobile).
+
+### L'innovation cachée — la boucle demande→achat
+MADORE **émet `demande.marche`** que **Carmelo consomme** : les recherches réelles des prospects
+orientent les achats. **Aucun concurrent ne relie le commercial à l'acheteur.** C'est un achat
+**piloté par la demande réelle**, pas par l'intuition. C'est le vrai atout stratégique de MADORE.
+
+### Différenciation
+- Ce qui existe : chatbots génériques (Intercom, Drift), formulaires de contact.
+- Ce qui manque partout : un agent **spécialisé auto** qui propose le **vrai stock** en direct, score
+  l'**intention d'achat**, et **nourrit l'agent d'achat**. Le générique ne fait rien de tout ça.
+
+### ⚠️ Critique honnête
+- **Défiance chatbot** : beaucoup de visiteurs ignorent ou se méfient des chatbots → la conversion
+  dépend énormément de la qualité du dialogue (ne pas être robotique ni intrusif).
+- **Dépend d'un stock riche** : un garage avec 5 voitures a peu à proposer → valeur réduite pour
+  les très petits.
+- **Verrou multi-tenant** : aujourd'hui câblé sur `NOTIFY_EMAIL` unique (Phase 2 non faite) → un seul
+  garage servi. **Bloquant pour vendre à plusieurs.**
+- **Scoring = auto-évaluation LLM** : même problème de calibration que la confiance Carmelo — à
+  confronter aux ventes réelles.
+- **Valeur plafonnée par le suivi humain** : si le commercial ne rappelle pas vite, le lead meurt
+  quand même. Le cron `leads-relances` aide, mais ne remplace pas l'appel.
+
+### Fonctionnalités
+- **Indispensable :** dialogue qualifiant, proposition stock live, scoring, alerte ROUGE immédiate.
+- **Importante (manquante) :** **matching proactif** (« on vient de rentrer une voiture qui
+  correspond à votre recherche ») ; **passage de relais WhatsApp** (continuer la conversation sur le
+  canal du client) ; scoring calibré sur les ventes réelles ; **dashboard de la demande** exposé
+  (ce que cherchent les prospects → quoi acheter).
+- **Secondaire :** personnalisation cosmétique de l'avatar.
+
+### Intelligence & automatisation
+- Auto : qualification, scoring, proposition de stock, alerte.
+- **Jamais auto :** promesse de prix/disponibilité ferme, engagement commercial → humain.
+
+### KPI
+Leads captés hors horaires, taux lead→contact, taux lead→vente, temps de réponse, précision des
+ROUGE (les ROUGE se concluent-ils vraiment ?), part du stock proposé pertinent.
+
+### Potentiel commercial
+Bon **module de croissance du chiffre** (capte des leads perdus). Cible : garages avec **trafic web**
+et **stock ≥ 10**. Prix module **79–149 €/mois**. Argument : « votre meilleur vendeur, jamais fatigué,
+qui ne rate jamais un client à 22h — et qui dit à Carmelo quoi acheter. »
+
+### Notes /10
+Innovation 7 · Valeur 8 · Différenciation 6 · Vente 7 · Rentabilité 7 · Faisabilité 8 · SaaS 7.
+
+### Version améliorée — MADORE 2.0
+Mettre en avant la **boucle demande→achat** (le vrai différenciateur). Ajouter matching proactif,
+relais WhatsApp, scoring calibré, dashboard de la demande. **Finir le multi-tenant (Phase 2)** —
+sans ça, invendable à plusieurs garages.
+
+---
+
+## 6. Agent MANDATS — Acquisition VO (dépôt-vente)
+
+### Mission & valeur — potentiellement le plus stratégique
+Analyse les annonces de **particuliers vendeurs** pour décrocher des **mandats de dépôt-vente** :
+détecte les signaux d'urgence, calcule la commission (5 %, min 800 €, max 3 500 €), génère la
+stratégie de contact et planifie les relances (J+2/J+7/J+14). Valeur : **résoudre LE problème n°1 du
+VO — trouver du stock — sans immobiliser de capital** (en dépôt-vente, on ne l'achète pas, on le vend
+pour le compte du particulier → commission). C'est de la **croissance capital-light**.
+
+### Différenciation — parmi les plus fortes
+**Personne ne fait de l'acquisition de mandats pilotée par IA.** Le sourcing est la partie la plus
+dure et la moins outillée du métier. Un agent qui identifie les bons véhicules, détecte l'urgence
+vendeur et scripte l'approche = **avance concurrentielle réelle sur le nerf de la guerre**.
+
+### ⚠️ Critique honnête (2 risques sérieux)
+1. **RGPD / conditions des plateformes — RISQUE À CADRER AVANT DE VENDRE.** Récupérer les
+   coordonnées de vendeurs particuliers depuis des annonces et **inférer leur situation personnelle**
+   (divorce, succession, saisie) est **sensible juridiquement et éthiquement**. Cela touche des
+   données personnelles + les CGU des plateformes interdisent souvent le démarchage. **À encadrer :
+   consentement, sources autorisées, ne pas stocker d'inférences intrusives.** Ne pas traiter ce
+   point = risque légal et réputationnel réel.
+2. **Analyse ≠ automatisation** : comme Marketing, l'agent **analyse et rédige** mais le contact réel
+   (WhatsApp/téléphone) est **manuel** (pas d'envoi automatisé — nécessiterait WhatsApp Business API,
+   non construit). Les relances sont *rappelées* par cron, pas *envoyées*. → « copilote de sourcing »,
+   pas automate. À assumer.
+
+### Autre point de vigilance
+La **détection d'urgence par inférence** (« probablement un divorce ») peut être **fausse et malaisante**
+si mal utilisée. La garder comme **signal interne prudent**, jamais comme argument de contact explicite.
+
+### Fonctionnalités
+- **Indispensable :** détection d'opportunités, calcul commission, stratégie de contact, relances,
+  pipeline de mandats.
+- **Importante (manquante) :** **intégration WhatsApp Business** (envoi réel et consenti) ;
+  **signature électronique** du mandat ; dashboard pipeline (opportunités → contacts → mandats signés) ;
+  cadrage RGPD intégré (sources autorisées, opt-out).
+- **À retirer / adoucir :** l'inférence intrusive de situation personnelle → réduire à des signaux
+  factuels (ancienneté annonce, baisses de prix, « urgent » explicite).
+
+### Intelligence & automatisation
+- Auto : détection, scoring d'opportunité, rédaction d'approche, calendrier de relances.
+- **Jamais auto :** l'envoi de messages non consentis, l'engagement de commission → humain + cadre légal.
+
+### KPI
+Mandats signés, taux contact→mandat, **commission générée**, coût de sourcing par mandat, délai
+opportunité→mandat, valeur du pipeline.
+
+### Potentiel commercial
+**Le plus fort argument de croissance** : « développez votre stock sans mobiliser de trésorerie ».
+Cible : garages/agences en modèle **dépôt-vente** (Simplicicar, Ewigo, indépendants). Prix module
+**149–299 €/mois** (justifié : une seule commission = 800–3 500 €). Marché BE + FR d'emblée.
+
+### Notes /10
+Innovation 8 · Valeur 8 · Différenciation **9** · Vente 6 (nécessite d'éduquer au modèle dépôt-vente)
+· Rentabilité 8 · Faisabilité 7 · SaaS 7.
+
+### Version améliorée — Mandats 2.0
+**Cadrer le RGPD en priorité** (sources autorisées, consentement, opt-out) — prérequis non
+négociable. Réduire l'inférence intrusive à des signaux factuels. Ajouter WhatsApp Business (envoi
+consenti), signature électronique, dashboard pipeline. **Positionner : « moteur de sourcing
+capital-light »** — l'argument de croissance le plus vendeur de tout l'écosystème.
 
 ---
 
