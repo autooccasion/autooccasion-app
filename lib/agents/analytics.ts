@@ -1,7 +1,7 @@
 // Pure analytics functions over the Vehicle dataset.
 // All inputs are plain arrays — no DB / network dependencies.
 
-import type { VehicleSummary } from './shared-types';
+import type { VehicleSummary, ControllerFlag } from './shared-types';
 
 export type MakeStats = {
   make: string;
@@ -305,5 +305,85 @@ export function computeProofMetrics(
     totalRealMargin: sold.reduce((s, v) => s + (v.realMargin ?? 0), 0),
 
     hasEnoughData: sold.length >= minSampleForCredibility,
+  };
+}
+
+// ============================================================
+// CONTRÔLEUR — journal de blocages (rendre le garde-fou visible)
+// Le Contrôleur évite l'erreur, donc on ne le "voit" jamais agir.
+// Ces stats rendent son action visible : combien de décisions risquées bloquées.
+// ============================================================
+
+export type ControllerJournalItem = {
+  id: number;
+  make: string | null;
+  model: string | null;
+  year: number | null;
+  decision: string | null;
+  status: string | null;
+  controllerValidated: boolean | null;
+  requiresHumanValidation: boolean | null;
+  controllerFlags: ControllerFlag[] | null;
+  updatedAt: Date | null;
+};
+
+export type ControllerBlockage = {
+  id: number;
+  label: string;
+  reasons: string[];       // messages des flags bloquants
+  updatedAt: Date | null;
+};
+
+export type ControllerStats = {
+  verifiedCount: number;       // véhicules passés par le Contrôleur (validés, sans bloquant)
+  blockedCount: number;        // véhicules avec au moins un flag bloquant
+  humanRequiredCount: number;  // véhicules en attente de validation humaine
+  warningCount: number;        // véhicules avec avertissement (sans bloquant)
+  blockedThisMonth: number;    // blocages sur les 30 derniers jours
+  recentBlockages: ControllerBlockage[]; // détail des blocages récents (max 8)
+};
+
+function hasSeverity(flags: ControllerFlag[] | null, sev: ControllerFlag['severity']): boolean {
+  return Array.isArray(flags) && flags.some((f) => f.severity === sev);
+}
+
+export function computeControllerStats(
+  rows: ControllerJournalItem[],
+  recentLimit = 8,
+): ControllerStats {
+  const now = Date.now();
+  const ms30 = 30 * 86_400_000;
+
+  const blocked = rows.filter((r) => hasSeverity(r.controllerFlags, 'bloquant'));
+  const warnings = rows.filter(
+    (r) => !hasSeverity(r.controllerFlags, 'bloquant') && hasSeverity(r.controllerFlags, 'avertissement'),
+  );
+  const verified = rows.filter(
+    (r) => r.controllerValidated === true && !hasSeverity(r.controllerFlags, 'bloquant'),
+  );
+  const humanRequired = rows.filter((r) => r.requiresHumanValidation === true);
+
+  const blockedThisMonth = blocked.filter(
+    (r) => r.updatedAt != null && now - new Date(r.updatedAt).getTime() <= ms30,
+  );
+
+  const recentBlockages: ControllerBlockage[] = blocked
+    .slice(0, recentLimit)
+    .map((r) => ({
+      id: r.id,
+      label: [r.make, r.model, r.year].filter(Boolean).join(' ') || `Véhicule #${r.id}`,
+      reasons: (r.controllerFlags ?? [])
+        .filter((f) => f.severity === 'bloquant')
+        .map((f) => f.message),
+      updatedAt: r.updatedAt,
+    }));
+
+  return {
+    verifiedCount: verified.length,
+    blockedCount: blocked.length,
+    humanRequiredCount: humanRequired.length,
+    warningCount: warnings.length,
+    blockedThisMonth: blockedThisMonth.length,
+    recentBlockages,
   };
 }

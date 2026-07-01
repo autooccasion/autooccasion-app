@@ -1253,6 +1253,53 @@ export async function getVehicles(email: string, limit = 100): Promise<VehicleRe
     .limit(limit);
 }
 
+export type ControllerJournalRow = {
+  id: number;
+  make: string | null;
+  model: string | null;
+  year: number | null;
+  decision: string | null;
+  status: string | null;
+  controllerValidated: boolean | null;
+  requiresHumanValidation: boolean | null;
+  controllerFlags: ControllerFlag[] | null;
+  updatedAt: Date | null;
+};
+
+// Projection légère pour le journal du Contrôleur (exclut les champs texte lourds).
+export async function getControllerJournal(email: string, limit = 200): Promise<ControllerJournalRow[]> {
+  await ensureSchema();
+  const rows = await getDb()
+    .select({
+      id: vehicle.id,
+      make: vehicle.make,
+      model: vehicle.model,
+      year: vehicle.year,
+      decision: vehicle.decision,
+      status: vehicle.status,
+      controllerValidated: vehicle.controllerValidated,
+      requiresHumanValidation: vehicle.requiresHumanValidation,
+      controllerFlags: vehicle.controllerFlags,
+      updatedAt: vehicle.updatedAt,
+    })
+    .from(vehicle)
+    .where(eq(vehicle.email, email))
+    .orderBy(desc(vehicle.updatedAt))
+    .limit(limit);
+  return rows.map((r) => ({
+    id: r.id,
+    make: r.make ?? null,
+    model: r.model ?? null,
+    year: r.year ?? null,
+    decision: r.decision ?? null,
+    status: r.status ?? null,
+    controllerValidated: r.controllerValidated ?? null,
+    requiresHumanValidation: r.requiresHumanValidation ?? null,
+    controllerFlags: (r.controllerFlags as ControllerFlag[] | null) ?? null,
+    updatedAt: r.updatedAt ?? null,
+  }));
+}
+
 export async function getVehicle(id: number, email: string): Promise<VehicleRecord | null> {
   await ensureSchema();
   const rows = await getDb()

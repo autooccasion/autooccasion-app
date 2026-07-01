@@ -1,7 +1,7 @@
 import { auth } from 'app/auth';
 import { redirect } from 'next/navigation';
-import { getVehicleSummaries } from 'app/db';
-import { computeMakeStats, computeStockHealth, computePerformanceKPIs, computeProofMetrics } from '@/lib/agents/analytics';
+import { getVehicleSummaries, getControllerJournal } from 'app/db';
+import { computeMakeStats, computeStockHealth, computePerformanceKPIs, computeProofMetrics, computeControllerStats } from '@/lib/agents/analytics';
 import Link from 'next/link';
 import GPNav from '../nav';
 
@@ -11,18 +11,29 @@ function euro(n: number | null | undefined): string {
   return n == null ? '—' : `${n.toLocaleString('fr-BE')} €`;
 }
 
+function formatDate(d: Date | string | null | undefined): string {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('fr-BE', { day: '2-digit', month: 'short' });
+}
+
 export default async function DashboardPage() {
   const session = await auth();
   if (!session?.user?.email) redirect('/login');
 
   let summaries: Awaited<ReturnType<typeof getVehicleSummaries>> = [];
-  try { summaries = await getVehicleSummaries(session.user.email); }
-  catch (err) { console.error('Dashboard: erreur analytics', err); }
+  let journal: Awaited<ReturnType<typeof getControllerJournal>> = [];
+  try {
+    [summaries, journal] = await Promise.all([
+      getVehicleSummaries(session.user.email),
+      getControllerJournal(session.user.email).catch(() => []),
+    ]);
+  } catch (err) { console.error('Dashboard: erreur analytics', err); }
 
   const makeStats  = computeMakeStats(summaries);
   const health     = computeStockHealth(summaries);
   const kpis       = computePerformanceKPIs(summaries);
   const proof      = computeProofMetrics(summaries);
+  const controller = computeControllerStats(journal);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col items-center py-12 px-4">
@@ -130,6 +141,66 @@ export default async function DashboardPage() {
                   </p>
                 )}
               </div>
+            </>
+          )}
+        </Section>
+
+        {/* Contrôleur — garde-fou visible */}
+        <Section title="Contrôleur — garde-fou de la plateforme">
+          {journal.length === 0 ? (
+            <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-5 text-sm text-zinc-400">
+              Le Contrôleur vérifie chaque décision critique avant exécution. Ses blocages
+              apparaîtront ici dès les premières analyses.
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <ProofCard
+                  label="Décisions vérifiées"
+                  value={String(controller.verifiedCount)}
+                  sub="Passées le garde-fou sans blocage"
+                  tone="green"
+                />
+                <ProofCard
+                  label="Décisions bloquées"
+                  value={String(controller.blockedCount)}
+                  sub={`${controller.blockedThisMonth} ce mois-ci`}
+                  tone="red"
+                />
+                <ProofCard
+                  label="Validation humaine requise"
+                  value={String(controller.humanRequiredCount)}
+                  sub="En attente de votre décision"
+                  tone="orange"
+                />
+                <ProofCard
+                  label="Avertissements"
+                  value={String(controller.warningCount)}
+                  sub="À surveiller, non bloquants"
+                  tone="orange"
+                />
+              </div>
+
+              {controller.recentBlockages.length > 0 && (
+                <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-4 mt-3">
+                  <p className="text-xs text-zinc-500 uppercase tracking-wide mb-2">
+                    Blocages récents — décisions risquées écartées
+                  </p>
+                  <div className="space-y-2">
+                    {controller.recentBlockages.map((b) => (
+                      <div key={b.id} className="border-b border-zinc-900 pb-2 last:border-0 last:pb-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm text-zinc-200 font-medium">🛡️ {b.label}</span>
+                          <span className="text-xs text-zinc-600">{formatDate(b.updatedAt)}</span>
+                        </div>
+                        {b.reasons.map((r, i) => (
+                          <p key={i} className="text-xs text-red-400/90 mt-0.5">🔴 {r}</p>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </Section>

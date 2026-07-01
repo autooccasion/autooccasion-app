@@ -100,6 +100,8 @@ export default async function StockPage() {
                 const decDot = DECISION_DOT[(v.decision || 'INCONNU')] || DECISION_DOT.INCONNU;
                 const label = [v.make, v.model, v.year].filter(Boolean).join(' ') || 'Véhicule';
                 const needsHuman = v.requiresHumanValidation && v.status === 'analyse';
+                const hasBlocker = Array.isArray(v.controllerFlags) && (v.controllerFlags as any[]).some((f) => f.severity === 'bloquant');
+                const verified = v.controllerValidated && !hasBlocker && !needsHuman;
                 return (
                   <details key={v.id} className="bg-zinc-900 border border-zinc-700 rounded-lg overflow-hidden">
                     <summary className="flex items-center justify-between gap-3 px-4 py-3 cursor-pointer list-none">
@@ -110,6 +112,11 @@ export default async function StockPage() {
                         {needsHuman && (
                           <span className="text-xs bg-yellow-950 border border-yellow-700 text-yellow-300 px-2 py-0.5 rounded-full shrink-0">
                             ⚠️ Validation requise
+                          </span>
+                        )}
+                        {verified && (
+                          <span className="text-xs bg-green-950 border border-green-800 text-green-400 px-2 py-0.5 rounded-full shrink-0" title="Décision passée par le Contrôleur sans blocage">
+                            ✓ Vérifié
                           </span>
                         )}
                       </div>
