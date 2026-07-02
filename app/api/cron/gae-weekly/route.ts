@@ -2,13 +2,12 @@
 // Sends a comprehensive weekly report: ROI per agent, billing pipeline, stagnant opps.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getGaeStats, getGaeReport, getStagnantGaeOpportunites } from 'app/db';
+import { getGaeStats, getGaeReport, getStagnantGaeOpportunites, getActiveTenants } from 'app/db';
 import { sendEmail } from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 30;
+export const maxDuration = 60;
 
-const NOTIFY   = process.env.NOTIFY_EMAIL ?? '';
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? '';
 
 const AGENT_LABELS: Record<string, string> = {
@@ -27,21 +26,14 @@ const TYPE_LABELS: Record<string, string> = {
   marketing: 'Marketing', financement: 'Financement',
 };
 
-export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get('authorization');
-  const secret = authHeader?.replace('Bearer ', '') ?? req.headers.get('x-cron-secret');
-  if (secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: 'Non autorisé.' }, { status: 401 });
-  }
-  if (!NOTIFY) return NextResponse.json({ error: 'NOTIFY_EMAIL non configuré.' }, { status: 500 });
-
+async function runForTenant(email: string): Promise<{ tenant: string; sent: boolean; total: number }> {
   const [stats, report, stagnant] = await Promise.all([
-    getGaeStats(NOTIFY).catch(() => null),
-    getGaeReport(NOTIFY).catch(() => []),
-    getStagnantGaeOpportunites(NOTIFY, 14).catch(() => []),
+    getGaeStats(email).catch(() => null),
+    getGaeReport(email).catch(() => []),
+    getStagnantGaeOpportunites(email, 14).catch(() => []),
   ]);
 
-  if (!stats) return NextResponse.json({ error: 'Impossible de charger les stats GAE.' }, { status: 500 });
+  if (!stats || stats.total === 0) return { tenant: email, sent: false, total: 0 };
 
   // Agent performance rows
   const agentRows = report.map(r => `
@@ -70,7 +62,7 @@ export async function GET(req: NextRequest) {
   const weekLabel = new Date().toLocaleDateString('fr-BE', { day: '2-digit', month: 'long', year: 'numeric' });
 
   await sendEmail({
-    to: NOTIFY,
+    to: email,
     subject: `📊 GP-CARS · Rapport GAE Hebdomadaire — ${weekLabel}`,
     html: `
 <div style="font-family:sans-serif;max-width:700px;margin:auto">
@@ -152,10 +144,27 @@ export async function GET(req: NextRequest) {
 </div>`,
   });
 
-  return NextResponse.json({
-    ok: true,
-    stats: { total: stats.total, transformed: stats.transformedCount, rate: stats.transformationRate },
-    agentsReported: report.length,
-    stagnantAlerted: stagnant.length,
-  });
+  return { tenant: email, sent: true, total: stats.total };
+}
+
+export async function GET(req: NextRequest) {
+  const authHeader = req.headers.get('authorization');
+  const secret = authHeader?.replace('Bearer ', '') ?? req.headers.get('x-cron-secret');
+  if (secret !== process.env.CRON_SECRET) {
+    return NextResponse.json({ error: 'Non autorisé.' }, { status: 401 });
+  }
+
+  const tenants = await getActiveTenants();
+  if (tenants.length === 0) return NextResponse.json({ error: 'Aucun garage actif.' }, { status: 500 });
+
+  const results = [];
+  for (const email of tenants) {
+    try {
+      results.push(await runForTenant(email));
+    } catch (err) {
+      console.error(`Cron gae-weekly [${email}]: échec`, err);
+      results.push({ tenant: email, sent: false, total: 0 });
+    }
+  }
+  return NextResponse.json({ ok: true, tenants: tenants.length, results });
 }

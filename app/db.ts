@@ -1008,6 +1008,32 @@ export async function createUser(email: string, password: string) {
 // ============================================================
 
 /**
+ * Liste des garages actifs (multi-tenant). Chaque tenant = un email qui scope ses données
+ * et reçoit ses notifications. Inclut toujours NOTIFY_EMAIL (rétrocompat mono-tenant GP-CARS)
+ * plus tous les comptes User. Ne lève jamais.
+ */
+export async function getActiveTenants(): Promise<string[]> {
+  const set = new Set<string>();
+  const notify = process.env.NOTIFY_EMAIL;
+  if (notify) set.add(notify);
+  try {
+    await ensureSchema();
+    const rows = await getDb().select({ email: users.email }).from(users);
+    for (const r of rows) if (r.email) set.add(r.email);
+  } catch (err) {
+    console.error('getActiveTenants: fallback NOTIFY_EMAIL seul', err);
+  }
+  return Array.from(set);
+}
+
+/** Résout un tenant à partir d'un identifiant public (email de garage), validé contre la liste active. */
+export async function resolveTenant(candidate: string | null | undefined): Promise<string | null> {
+  if (!candidate) return null;
+  const tenants = await getActiveTenants();
+  return tenants.includes(candidate) ? candidate : null;
+}
+
+/**
  * Renvoie la configuration complète (défauts + overrides) pour un garage.
  * Un garage sans overrides reçoit DEFAULT_GARAGE_CONFIG (comportement actuel).
  * Ne lève jamais : en cas d'erreur DB, retombe sur les défauts.

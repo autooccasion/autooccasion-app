@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
-import { getStockVehicles, saveLead, saveDemandSignal } from 'app/db';
+import { getStockVehicles, saveLead, saveDemandSignal, resolveTenant } from 'app/db';
 import { trackOpportunite } from '@/lib/attribution';
 import { buildMadoreSystemPrompt } from '@/lib/madore/system-prompt';
 import { matchStock, formatStockForPrompt } from '@/lib/madore/stock-match';
@@ -33,8 +33,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Messages requis.' }, { status: 400 });
   }
 
-  // Fetch live stock for the GP-CARS owner.
-  const ownerEmail = process.env.NOTIFY_EMAIL ?? '';
+  // Résolution du garage (multi-tenant) : le site public transmet son identifiant
+  // via body.tenant. Validé contre la liste des garages actifs pour éviter tout accès
+  // à des données d'un autre garage. Repli sur NOTIFY_EMAIL (déploiement mono-garage).
+  const requestedTenant = typeof body?.tenant === 'string' ? body.tenant : null;
+  const resolvedTenant = await resolveTenant(requestedTenant).catch(() => null);
+  const ownerEmail = resolvedTenant ?? process.env.NOTIFY_EMAIL ?? '';
   let stockBlock = 'Stock temporairement indisponible.';
   try {
     if (ownerEmail) {

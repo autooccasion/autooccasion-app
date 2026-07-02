@@ -1,10 +1,12 @@
 // Runs daily at 07:00 — sends reminder emails for RDVs the next day.
 import { NextRequest, NextResponse } from 'next/server';
 import { sendEmail } from '@/lib/email';
+import { getActiveTenants } from 'app/db';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? '';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization');
@@ -13,8 +15,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Non autorisé.' }, { status: 401 });
   }
 
-  // We need a direct DB query since we don't have email per-session here
-  // Import via postgres template tag
+  const tenants = await getActiveTenants();
+  if (tenants.length === 0) return NextResponse.json({ error: 'Aucun garage actif.' }, { status: 500 });
+
   const { default: postgres } = await import('postgres');
   const sql = postgres(`${process.env.POSTGRES_URL!}?sslmode=require`);
 
@@ -26,59 +29,59 @@ export async function GET(req: NextRequest) {
     const to = new Date(tomorrow);
     to.setHours(23, 59, 59, 999);
 
-    const rdvs = await sql`
-      SELECT r.*, v.make, v.model, v.year
-      FROM "RdvAtelier" r
-      LEFT JOIN "Vehicle" v ON v.id = r.vehicle_id
-      WHERE r.status IN ('planifie', 'confirme')
-        AND r.reminder_sent = false
-        AND r.scheduled_at >= ${from}
-        AND r.scheduled_at <= ${to}
-      ORDER BY r.scheduled_at ASC
-    `;
+    let totalProcessed = 0;
+    let totalSent = 0;
 
-    const NOTIFY = process.env.NOTIFY_EMAIL ?? '';
-    let sent = 0;
+    for (const tenant of tenants) {
+      // Chaque garage ne voit QUE ses propres RDV (scoping strict par email).
+      const rdvs = await sql`
+        SELECT r.*, v.make, v.model, v.year
+        FROM "RdvAtelier" r
+        LEFT JOIN "Vehicle" v ON v.id = r.vehicle_id
+        WHERE r.email = ${tenant}
+          AND r.status IN ('planifie', 'confirme')
+          AND r.reminder_sent = false
+          AND r.scheduled_at >= ${from}
+          AND r.scheduled_at <= ${to}
+        ORDER BY r.scheduled_at ASC
+      `;
 
-    for (const rdv of rdvs) {
-      const scheduledAt = new Date(rdv.scheduled_at);
-      const timeStr = scheduledAt.toLocaleTimeString('fr-BE', { hour: '2-digit', minute: '2-digit' });
-      const dateStr = scheduledAt.toLocaleDateString('fr-BE', { weekday: 'long', day: '2-digit', month: 'long' });
-      const vehicleLabel = rdv.make ? `${rdv.make} ${rdv.model ?? ''} ${rdv.year ?? ''}`.trim() : null;
+      for (const rdv of rdvs) {
+        const scheduledAt = new Date(rdv.scheduled_at);
+        const timeStr = scheduledAt.toLocaleTimeString('fr-BE', { hour: '2-digit', minute: '2-digit' });
+        const dateStr = scheduledAt.toLocaleDateString('fr-BE', { weekday: 'long', day: '2-digit', month: 'long' });
+        const vehicleLabel = rdv.make ? `${rdv.make} ${rdv.model ?? ''} ${rdv.year ?? ''}`.trim() : null;
 
-      const typeLabels: Record<string, string> = {
-        diagnostic: 'Diagnostic', intervention: 'Intervention',
-        livraison: 'Livraison', reprise_trade_in: 'Reprise', essai: 'Essai',
-      };
-      const typeLabel = typeLabels[rdv.type as string] ?? rdv.type;
+        const typeLabels: Record<string, string> = {
+          diagnostic: 'Diagnostic', intervention: 'Intervention',
+          livraison: 'Livraison', reprise_trade_in: 'Reprise', essai: 'Essai',
+        };
+        const typeLabel = typeLabels[rdv.type as string] ?? rdv.type;
 
-      // Email to garage owner (always)
-      if (NOTIFY) {
+        // Email au garage (le tenant)
         await sendEmail({
-          to: NOTIFY,
+          to: tenant,
           subject: `📅 GP-CARS · RDV demain ${timeStr} — ${rdv.customer_name ?? 'Client'} · ${typeLabel}`,
           html: buildRdvReminderGarageEmail({ rdv, typeLabel, dateStr, timeStr, vehicleLabel, baseUrl: BASE_URL }),
         }).catch(() => null);
-        sent++;
-      }
+        totalSent++;
 
-      // Email to customer if they have one
-      if (rdv.customer_email) {
-        await sendEmail({
-          to: rdv.customer_email as string,
-          subject: `Rappel de votre rendez-vous GP-CARS — ${dateStr} à ${timeStr}`,
-          html: buildRdvReminderClientEmail({ rdv, typeLabel, dateStr, timeStr, vehicleLabel }),
-        }).catch(() => null);
-      }
+        // Email au client s'il en a un
+        if (rdv.customer_email) {
+          await sendEmail({
+            to: rdv.customer_email as string,
+            subject: `Rappel de votre rendez-vous GP-CARS — ${dateStr} à ${timeStr}`,
+            html: buildRdvReminderClientEmail({ rdv, typeLabel, dateStr, timeStr, vehicleLabel }),
+          }).catch(() => null);
+        }
 
-      // Mark as sent
-      await sql`
-        UPDATE "RdvAtelier" SET reminder_sent = true WHERE id = ${rdv.id}
-      `;
+        await sql`UPDATE "RdvAtelier" SET reminder_sent = true WHERE id = ${rdv.id}`;
+      }
+      totalProcessed += rdvs.length;
     }
 
     await sql.end();
-    return NextResponse.json({ ok: true, rdvsProcessed: rdvs.length, emailsSent: sent });
+    return NextResponse.json({ ok: true, tenants: tenants.length, rdvsProcessed: totalProcessed, emailsSent: totalSent });
   } catch (err) {
     await sql.end().catch(() => null);
     console.error('RDV reminder error:', err);

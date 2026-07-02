@@ -3,27 +3,19 @@
 // This cron fires a reminder if still 'nouveau' after 4h.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getHotLeadsNotContacted } from 'app/db';
+import { getHotLeadsNotContacted, getActiveTenants } from 'app/db';
 import { sendEmail } from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 20;
+export const maxDuration = 60;
 
-const NOTIFY   = process.env.NOTIFY_EMAIL ?? '';
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? '';
 const HOURS_THRESHOLD = 4;
 
-export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get('authorization');
-  const secret = authHeader?.replace('Bearer ', '') ?? req.headers.get('x-cron-secret');
-  if (secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: 'Non autorisé.' }, { status: 401 });
-  }
-  if (!NOTIFY) return NextResponse.json({ error: 'NOTIFY_EMAIL non configuré.' }, { status: 500 });
-
-  const leads = await getHotLeadsNotContacted(NOTIFY, HOURS_THRESHOLD).catch(() => []);
+async function runForTenant(email: string): Promise<{ tenant: string; alerted: number }> {
+  const leads = await getHotLeadsNotContacted(email, HOURS_THRESHOLD).catch(() => []);
   if (leads.length === 0) {
-    return NextResponse.json({ ok: true, message: 'Aucun lead ROUGE en attente.', checked: 0 });
+    return { tenant: email, alerted: 0 };
   }
 
   const rows = leads.map(l => {
@@ -42,7 +34,7 @@ export async function GET(req: NextRequest) {
   }).join('');
 
   await sendEmail({
-    to: NOTIFY,
+    to: email,
     subject: `🔴 GP-CARS · ${leads.length} lead(s) ROUGE sans contact — Agir maintenant`,
     html: `
 <div style="font-family:sans-serif;max-width:700px;margin:auto">
@@ -71,5 +63,27 @@ export async function GET(req: NextRequest) {
 </div>`,
   });
 
-  return NextResponse.json({ ok: true, alerted: leads.length });
+  return { tenant: email, alerted: leads.length };
+}
+
+export async function GET(req: NextRequest) {
+  const authHeader = req.headers.get('authorization');
+  const secret = authHeader?.replace('Bearer ', '') ?? req.headers.get('x-cron-secret');
+  if (secret !== process.env.CRON_SECRET) {
+    return NextResponse.json({ error: 'Non autorisé.' }, { status: 401 });
+  }
+
+  const tenants = await getActiveTenants();
+  if (tenants.length === 0) return NextResponse.json({ error: 'Aucun garage actif.' }, { status: 500 });
+
+  const results = [];
+  for (const email of tenants) {
+    try {
+      results.push(await runForTenant(email));
+    } catch (err) {
+      console.error(`Cron leads-relances [${email}]: échec`, err);
+      results.push({ tenant: email, alerted: 0 });
+    }
+  }
+  return NextResponse.json({ ok: true, tenants: tenants.length, results });
 }

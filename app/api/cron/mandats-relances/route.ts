@@ -3,13 +3,12 @@
 // This cron triggers any that are due in the next 24h.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDueRelances, markRelanceSent, getMandatOpportunite } from 'app/db';
+import { getDueRelances, markRelanceSent, getMandatOpportunite, getActiveTenants } from 'app/db';
 import { sendEmail } from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 30;
+export const maxDuration = 60;
 
-const NOTIFY  = process.env.NOTIFY_EMAIL ?? '';
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? '';
 
 const CANAL_LABELS: Record<string, string> = {
@@ -20,23 +19,16 @@ const CANAL_LABELS: Record<string, string> = {
   messenger: 'Messenger',
 };
 
-export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get('authorization');
-  const secret = authHeader?.replace('Bearer ', '') ?? req.headers.get('x-cron-secret');
-  if (secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: 'Non autorisé.' }, { status: 401 });
-  }
-  if (!NOTIFY) return NextResponse.json({ error: 'NOTIFY_EMAIL non configuré.' }, { status: 500 });
-
-  const relances = await getDueRelances(NOTIFY).catch(() => []);
+async function runForTenant(email: string): Promise<{ tenant: string; sent: number }> {
+  const relances = await getDueRelances(email).catch(() => []);
   if (relances.length === 0) {
-    return NextResponse.json({ ok: true, message: 'Aucune relance due.', checked: 0 });
+    return { tenant: email, sent: 0 };
   }
 
   // Enrich with opportunite context
   const rows: string[] = [];
   for (const r of relances) {
-    const opp = await getMandatOpportunite(r.opportuniteId, NOTIFY).catch(() => null);
+    const opp = await getMandatOpportunite(r.opportuniteId, email).catch(() => null);
     const vehicleLabel = opp
       ? [opp.make, opp.model, opp.year].filter(Boolean).join(' ') || opp.listingTitle || `Opportunité #${opp.id}`
       : `Opportunité #${r.opportuniteId}`;
@@ -57,7 +49,7 @@ export async function GET(req: NextRequest) {
   }
 
   await sendEmail({
-    to: NOTIFY,
+    to: email,
     subject: `📬 GP-CARS · ${relances.length} relance(s) Mandats à envoyer aujourd'hui`,
     html: `
 <div style="font-family:sans-serif;max-width:700px;margin:auto">
@@ -85,5 +77,27 @@ export async function GET(req: NextRequest) {
 </div>`,
   });
 
-  return NextResponse.json({ ok: true, sent: relances.length });
+  return { tenant: email, sent: relances.length };
+}
+
+export async function GET(req: NextRequest) {
+  const authHeader = req.headers.get('authorization');
+  const secret = authHeader?.replace('Bearer ', '') ?? req.headers.get('x-cron-secret');
+  if (secret !== process.env.CRON_SECRET) {
+    return NextResponse.json({ error: 'Non autorisé.' }, { status: 401 });
+  }
+
+  const tenants = await getActiveTenants();
+  if (tenants.length === 0) return NextResponse.json({ error: 'Aucun garage actif.' }, { status: 500 });
+
+  const results = [];
+  for (const email of tenants) {
+    try {
+      results.push(await runForTenant(email));
+    } catch (err) {
+      console.error(`Cron mandats-relances [${email}]: échec`, err);
+      results.push({ tenant: email, sent: 0 });
+    }
+  }
+  return NextResponse.json({ ok: true, tenants: tenants.length, results });
 }

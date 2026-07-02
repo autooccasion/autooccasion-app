@@ -49,6 +49,8 @@ export default function MadorePage() {
 function MadoreChat() {
   const params = useSearchParams();
   const demo = params.get('demo') === 'true' || params.get('demo') === '1';
+  // Identifiant du garage pour l'embed multi-tenant (?tenant=email). Absent → garage par défaut.
+  const tenant = params.get('tenant') ?? params.get('site');
 
   const [messages, setMessages] = useState<Message[]>([WELCOME]);
   const [input, setInput] = useState('');
@@ -77,7 +79,7 @@ function MadoreChat() {
       const res = await fetch('/api/madore/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history, demo }),
+        body: JSON.stringify({ messages: history, demo, tenant }),
       });
 
       if (!res.body) throw new Error('No body');

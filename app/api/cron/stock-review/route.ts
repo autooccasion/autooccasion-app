@@ -2,31 +2,20 @@
 // Runs at 09:00 BE via Vercel Cron.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getVehicles } from 'app/db';
+import { getVehicles, getActiveTenants } from 'app/db';
 import { getVehiclesNeedingAction } from '@/lib/marketing/price-rules';
 import { emit } from '@/lib/events/publish';
 import { sendEmail } from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 30;
+export const maxDuration = 60;
 
-export async function GET(req: NextRequest) {
-  // Security: verify cron secret via Bearer header (consistent with other crons)
-  const authHeader = req.headers.get('authorization');
-  const secret = authHeader?.replace('Bearer ', '') ?? req.headers.get('x-cron-secret');
-  if (secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const email = process.env.NOTIFY_EMAIL;
-  if (!email) return NextResponse.json({ error: 'NOTIFY_EMAIL not set' }, { status: 500 });
-
-  try {
+async function runForTenant(email: string): Promise<{ tenant: string; actionsNeeded: number; checked: number }> {
     const vehicles = await getVehicles(email, 200);
     const actionsNeeded = getVehiclesNeedingAction(vehicles);
 
     if (actionsNeeded.length === 0) {
-      return NextResponse.json({ ok: true, message: 'Aucun véhicule immobilisé.', checked: vehicles.length });
+      return { tenant: email, actionsNeeded: 0, checked: vehicles.length };
     }
 
     // Fire individual events for each vehicle needing action
@@ -87,13 +76,28 @@ export async function GET(req: NextRequest) {
 </div>`,
     });
 
-    return NextResponse.json({
-      ok: true,
-      actionsNeeded: actionsNeeded.length,
-      checked: vehicles.length,
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Erreur inconnue';
-    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+    return { tenant: email, actionsNeeded: actionsNeeded.length, checked: vehicles.length };
+}
+
+export async function GET(req: NextRequest) {
+  // Security: verify cron secret via Bearer header (consistent with other crons)
+  const authHeader = req.headers.get('authorization');
+  const secret = authHeader?.replace('Bearer ', '') ?? req.headers.get('x-cron-secret');
+  if (secret !== process.env.CRON_SECRET) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  const tenants = await getActiveTenants();
+  if (tenants.length === 0) return NextResponse.json({ error: 'Aucun garage actif.' }, { status: 500 });
+
+  const results = [];
+  for (const email of tenants) {
+    try {
+      results.push(await runForTenant(email));
+    } catch (err) {
+      console.error(`Cron stock-review [${email}]: échec`, err);
+      results.push({ tenant: email, actionsNeeded: 0, checked: 0 });
+    }
+  }
+  return NextResponse.json({ ok: true, tenants: tenants.length, results });
 }
