@@ -387,3 +387,76 @@ export function computeControllerStats(
     recentBlockages,
   };
 }
+
+// ============================================================
+// SOURCING PROACTIF — Carmelo × MADORE
+// Croise les opportunités VERT/OR (Carmelo) avec la demande réelle des prospects
+// (DemandSignal, émis par MADORE). Répond à : « quels bons deals acheter EN PRIORITÉ
+// parce que des clients les attendent déjà ? » — l'agent passe d'analyste à apporteur d'affaires.
+// ============================================================
+
+export type DemandSignalLike = {
+  vehicleType: string | null;
+  fuelPreference: string | null;
+  gearboxPreference: string | null;
+  budgetMin: number | null;
+  budgetMax: number | null;
+  priority: string | null;
+};
+
+export type SourcingMatch = {
+  vehicle: VehicleSummary;
+  sellEstimate: number | null;   // prix de revente estimé
+  matchCount: number;            // nombre de prospects en attente qui collent
+  hotCount: number;              // dont prospects ROUGE (priorité haute)
+};
+
+export function computeSourcingMatches(
+  opportunities: VehicleSummary[],
+  demand: DemandSignalLike[],
+): SourcingMatch[] {
+  // Opportunités = bons deals analysés, pas encore achetés.
+  const opps = opportunities.filter(
+    (v) => (v.decision === 'OR' || v.decision === 'VERT') && ['analyse', 'prospect'].includes(v.status),
+  );
+
+  const matches: SourcingMatch[] = opps.map((v) => {
+    const sellEstimate = v.maxBuyPrice != null && v.estimatedMargin != null
+      ? v.maxBuyPrice + v.estimatedMargin
+      : v.askingPrice;
+
+    let matchCount = 0;
+    let hotCount = 0;
+    for (const d of demand) {
+      // Budget : la revente estimée doit tenir dans la fourchette du prospect (tolérance).
+      let ok = true;
+      if (sellEstimate != null) {
+        if (d.budgetMax != null && sellEstimate > d.budgetMax * 1.05) ok = false;
+        if (d.budgetMin != null && sellEstimate < d.budgetMin * 0.9) ok = false;
+      }
+      // Carburant : si le prospect a une préférence explicite et l'opportunité aussi, elles doivent coïncider.
+      if (ok && d.fuelPreference && v.fuel) {
+        const a = d.fuelPreference.toLowerCase();
+        const b = v.fuel.toLowerCase();
+        if (!a.includes(b) && !b.includes(a)) ok = false;
+      }
+      if (ok) {
+        matchCount++;
+        if (d.priority === 'ROUGE') hotCount++;
+      }
+    }
+
+    return { vehicle: v, sellEstimate, matchCount, hotCount };
+  });
+
+  return matches
+    .filter((m) => m.matchCount > 0)
+    .sort((a, b) => {
+      // Prospects chauds d'abord, puis OR, puis nombre de demandes.
+      if (b.hotCount !== a.hotCount) return b.hotCount - a.hotCount;
+      const aOr = a.vehicle.decision === 'OR' ? 1 : 0;
+      const bOr = b.vehicle.decision === 'OR' ? 1 : 0;
+      if (aOr !== bOr) return bOr - aOr;
+      return b.matchCount - a.matchCount;
+    });
+}

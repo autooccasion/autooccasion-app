@@ -1,7 +1,7 @@
 import { auth } from 'app/auth';
 import { redirect } from 'next/navigation';
-import { getVehicleSummaries, getControllerJournal } from 'app/db';
-import { computeMakeStats, computeStockHealth, computePerformanceKPIs, computeProofMetrics, computeControllerStats } from '@/lib/agents/analytics';
+import { getVehicleSummaries, getControllerJournal, getRecentDemandSignals } from 'app/db';
+import { computeMakeStats, computeStockHealth, computePerformanceKPIs, computeProofMetrics, computeControllerStats, computeSourcingMatches } from '@/lib/agents/analytics';
 import Link from 'next/link';
 import GPNav from '../nav';
 
@@ -22,10 +22,12 @@ export default async function DashboardPage() {
 
   let summaries: Awaited<ReturnType<typeof getVehicleSummaries>> = [];
   let journal: Awaited<ReturnType<typeof getControllerJournal>> = [];
+  let demand: Awaited<ReturnType<typeof getRecentDemandSignals>> = [];
   try {
-    [summaries, journal] = await Promise.all([
+    [summaries, journal, demand] = await Promise.all([
       getVehicleSummaries(session.user.email),
       getControllerJournal(session.user.email).catch(() => []),
+      getRecentDemandSignals(session.user.email, 40).catch(() => []),
     ]);
   } catch (err) { console.error('Dashboard: erreur analytics', err); }
 
@@ -34,6 +36,7 @@ export default async function DashboardPage() {
   const kpis       = computePerformanceKPIs(summaries);
   const proof      = computeProofMetrics(summaries);
   const controller = computeControllerStats(journal);
+  const sourcing   = computeSourcingMatches(summaries, demand);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col items-center py-12 px-4">
@@ -53,6 +56,41 @@ export default async function DashboardPage() {
           <KPI label="Marge moyenne (30 j)" value={euro(kpis.avgMarginLast30)} />
           <KPI label="Rotation moyenne (30 j)" value={kpis.avgRotationLast30 != null ? `${kpis.avgRotationLast30} j` : '—'} />
         </div>
+
+        {/* Sourcing proactif — acheter en priorité (correspond à la demande) */}
+        {sourcing.length > 0 && (
+          <Section title="🎯 Acheter en priorité — ces opportunités correspondent à la demande de vos prospects">
+            <div className="space-y-2">
+              {sourcing.slice(0, 6).map((m) => {
+                const v = m.vehicle;
+                const label = [v.make, v.model, v.year].filter(Boolean).join(' ') || 'Véhicule';
+                return (
+                  <div key={v.id} className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg p-3 border ${m.hotCount > 0 ? 'bg-red-950/30 border-red-900' : 'bg-zinc-900 border-zinc-700'}`}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${v.decision === 'OR' ? 'bg-yellow-950 text-yellow-300 border-yellow-800' : 'bg-green-950 text-green-300 border-green-800'}`}>
+                        {v.decision === 'OR' ? '🥇 OR' : '🟢 VERT'}
+                      </span>
+                      <span className="text-sm text-zinc-100 truncate">{label}</span>
+                      {v.km != null && <span className="text-xs text-zinc-500 shrink-0">{v.km.toLocaleString('fr-BE')} km</span>}
+                    </div>
+                    <div className="flex items-center gap-4 shrink-0 text-xs">
+                      {m.sellEstimate != null && <span className="text-zinc-400">Revente ~{euro(m.sellEstimate)}</span>}
+                      {v.estimatedMargin != null && <span className="text-green-400">marge {euro(v.estimatedMargin)}</span>}
+                      <span className={`font-semibold ${m.hotCount > 0 ? 'text-red-300' : 'text-blue-300'}`}>
+                        {m.hotCount > 0 ? `🔴 ${m.hotCount} chaud${m.hotCount > 1 ? 's' : ''} · ` : ''}{m.matchCount} prospect{m.matchCount > 1 ? 's' : ''} en attente
+                      </span>
+                      <Link href={`/gp/vehicle/${v.id}`} className="text-zinc-300 underline hover:text-zinc-100">Voir →</Link>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-xs text-zinc-600">
+              Croisement des opportunités VERT/OR de Carmelo avec la demande réelle des prospects (MADORE, 30 derniers jours).
+              Acheter ces véhicules = vente probable rapide.
+            </p>
+          </Section>
+        )}
 
         {/* Preuve — Carmelo vs Réalité */}
         <Section title="Carmelo vs Réalité — preuve de valeur">
