@@ -119,34 +119,83 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Réponse Claude non parseable.', rawText }, { status: 500 });
   }
 
-  // Save pieces vetustness
-  if (Array.isArray(parsed.pieces) && parsed.pieces.length > 0) {
-    await saveGarantiePieces(body.dossierId, email, parsed.pieces as Parameters<typeof saveGarantiePieces>[2]);
+  // Normalise une valeur de couverture (le prompt v1 utilise "refus", la DB attend "refusee").
+  const normalizeCoverage = (v: unknown): GarantieCoverage | null => {
+    if (v === 'refus') return 'refusee';
+    if (v === 'totale' || v === 'partielle' || v === 'refusee' || v === 'en_attente') return v;
+    return null;
+  };
+
+  // Correspondance décision v1 (A/B/C/D) → catégorie + couverture DB.
+  const DECISION_MAP: Record<string, { category: string; coverage: GarantieCoverage; label: string }> = {
+    A: { category: '2', coverage: 'totale',     label: 'Prise en charge totale (défaut de conformité)' },
+    B: { category: '3', coverage: 'partielle',  label: 'Prise en charge partagée (usure prématurée)' },
+    C: { category: '7', coverage: 'en_attente', label: 'Expertise requise — diagnostic atelier obligatoire' },
+    D: { category: '4', coverage: 'refusee',    label: 'Hors garantie (proposition de refus motivée)' },
+  };
+
+  // Normalise et enregistre les pièces (vétusté).
+  const rawPieces = Array.isArray(parsed.pieces) ? (parsed.pieces as Record<string, unknown>[]) : [];
+  const pieces = rawPieces.map(p => ({ ...p, coverageDecision: normalizeCoverage(p.coverageDecision) }));
+  if (pieces.length > 0) {
+    await saveGarantiePieces(body.dossierId, email, pieces as Parameters<typeof saveGarantiePieces>[2]);
   }
 
-  // Determine new status
+  // ── Adaptateur schéma v1 → colonnes DB (avec repli sur l'ancien schéma) ──
+  const dp = typeof parsed.decision_proposee === 'string' ? parsed.decision_proposee.toUpperCase() : null;
+  const mapped = dp && DECISION_MAP[dp] ? DECISION_MAP[dp] : null;
+
+  const totalContribution = pieces.reduce(
+    (s, p) => s + (typeof p.clientContribution === 'number' ? (p.clientContribution as number) : 0), 0,
+  );
+  const piecesWithPct = pieces.filter(p => typeof p.coveragePercent === 'number');
+  const avgCoveragePct = piecesWithPct.length > 0
+    ? Math.round(piecesWithPct.reduce((s, p) => s + (p.coveragePercent as number), 0) / piecesWithPct.length)
+    : null;
+
+  const category = (parsed.category as string) ?? mapped?.category ?? null;
+  const coverageDecision: GarantieCoverage =
+    normalizeCoverage(parsed.coverageDecision) ?? mapped?.coverage ?? 'en_attente';
+  const coveragePercent = typeof parsed.coveragePercent === 'number' ? parsed.coveragePercent
+    : dp === 'A' ? 100 : dp === 'D' ? 0 : avgCoveragePct;
+  const clientContribution = typeof parsed.clientContribution === 'number' ? parsed.clientContribution
+    : totalContribution > 0 ? totalContribution : null;
+
+  const analysis       = (parsed.analysis as string)       ?? (parsed.motivation as string)       ?? null;
+  const recommendation = (parsed.recommendation as string) ?? (mapped
+    ? `${mapped.label}${parsed.requires_human_validation ? ' — validation humaine requise avant toute communication définitive.' : ''}`
+    : null);
+  const strengths  = (parsed.strengths as string[])  ?? (parsed.faits_retenus as string[])     ?? null;
+  const weaknesses = (parsed.weaknesses as string[]) ?? (parsed.donnees_manquantes as string[]) ?? null;
+  const legalBasis = (parsed.legalBasis as string[]) ?? ACTIVE_RULESET.legalBasis ?? null;
+  const communicationEmail = (parsed.communicationEmail as string) ?? (parsed.message_client_fr as string) ?? null;
+
+  // Statut : litige si probabilité élevée ; expertise si décision C ; sinon décision prise.
   const litigationProbability = (parsed.litigationProbability as number) ?? 0;
-  const newStatus: GarantieStatus = litigationProbability > 70 ? 'litige' : 'decision_prise';
+  const newStatus: GarantieStatus =
+    litigationProbability > 70 ? 'litige'
+    : dp === 'C'               ? 'expertise'
+    :                            'decision_prise';
 
   // Persist all AI results
   await updateGarantieDossier(body.dossierId, email, {
     status:                   newStatus,
-    category:                 parsed.category as any,
-    coverageDecision:         (parsed.coverageDecision as GarantieCoverage) ?? 'en_attente',
-    coveragePercent:          (parsed.coveragePercent as number)    ?? null,
-    clientContribution:       (parsed.clientContribution as number) ?? null,
+    category:                 category as any,
+    coverageDecision,
+    coveragePercent:          coveragePercent ?? null,
+    clientContribution:       clientContribution ?? null,
     riskScoreLegal:           (parsed.riskScoreLegal as number)     ?? null,
     riskScoreFinancial:       (parsed.riskScoreFinancial as number) ?? null,
     litigationProbability:    (parsed.litigationProbability as number) ?? null,
     garageSuccessProbability: (parsed.garageSuccessProbability as number) ?? null,
     confidenceLevel:          (parsed.confidenceLevel as number)    ?? null,
-    aiAnalysis:               (parsed.analysis as string)           ?? null,
-    aiRecommendation:         (parsed.recommendation as string)     ?? null,
-    aiStrengths:              (parsed.strengths as string[])        ?? null,
-    aiWeaknesses:             (parsed.weaknesses as string[])       ?? null,
-    aiLegalBasis:             (parsed.legalBasis as string[])       ?? null,
+    aiAnalysis:               analysis,
+    aiRecommendation:         recommendation,
+    aiStrengths:              strengths,
+    aiWeaknesses:             weaknesses,
+    aiLegalBasis:             legalBasis,
     aiNextSteps:              (parsed.nextSteps as string[])        ?? null,
-    communicationEmail:       (parsed.communicationEmail as string) ?? null,
+    communicationEmail,
     communicationWhatsapp:    (parsed.communicationWhatsapp as string) ?? null,
     communicationRefus:       (parsed.communicationRefus as string) ?? null,
     communicationTransaction: (parsed.communicationTransaction as string) ?? null,
@@ -155,8 +204,8 @@ export async function POST(req: NextRequest) {
 
   await publishEvent('garantie.decision', 'garantie', {
     dossierId: body.dossierId,
-    category: parsed.category,
-    coverageDecision: parsed.coverageDecision,
+    category,
+    coverageDecision,
     litigationProbability,
   }, email);
 
