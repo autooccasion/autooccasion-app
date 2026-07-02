@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { buildCarmeloSystemPrompt } from '@/lib/carmelo/system-prompt';
 import { fetchListing } from '@/lib/carmelo/fetch-listing';
-import { selectRelevant, buildMemoryBlock, buildStatsBlock } from '@/lib/carmelo/memory';
+import { selectRelevant, buildMemoryBlock, buildStatsBlock, buildSavBlock } from '@/lib/carmelo/memory';
 import { parseReport } from '@/lib/carmelo/parse';
 import { auth } from 'app/auth';
-import { saveAnalysis, getVehiclesForMemory, createVehicle, saveControllerResult, getVehicleSummaries, getGarageConfig } from 'app/db';
+import { saveAnalysis, getVehiclesForMemory, createVehicle, saveControllerResult, getVehicleSummaries, getGarageConfig, getSavStatsByModel } from 'app/db';
 import { trackOpportunite } from '@/lib/attribution';
 import { computeMakeStats } from '@/lib/agents/analytics';
 import { runHardRules } from '@/lib/agents/controller/system-prompt';
@@ -70,19 +70,22 @@ export async function POST(req: NextRequest) {
   // Config du garage (défauts = comportement actuel).
   const config = await getGarageConfig(email);
 
-  // 2. Mémoire GP-CARS — cas passés pertinents + statistiques par marque.
+  // 2. Mémoire GP-CARS — cas passés pertinents + statistiques par marque + historique SAV.
   let memoryBlock = '';
   let statsBlock = '';
+  let savBlock = '';
   try {
     const haystack = `${listingText} ${vehicule}`;
-    const [past, summaries] = await Promise.all([
+    const [past, summaries, savStats] = await Promise.all([
       getVehiclesForMemory(email, 40),
       getVehicleSummaries(email),
+      getSavStatsByModel(email).catch(() => []),
     ]);
     const relevant = selectRelevant(past, haystack);
     memoryBlock = buildMemoryBlock(relevant);
     const makeStats = computeMakeStats(summaries);
     statsBlock = buildStatsBlock(makeStats);
+    savBlock = buildSavBlock(savStats);
   } catch (err) {
     console.error('Carmelo: mémoire indisponible', err);
   }
@@ -97,6 +100,7 @@ export async function POST(req: NextRequest) {
   }
   if (vehicule) parts.push(`DESCRIPTION FOURNIE :\n${vehicule}`);
   if (statsBlock) parts.push(statsBlock);
+  if (savBlock) parts.push(savBlock);
   if (memoryBlock) parts.push(memoryBlock);
   const userMessage = parts.join('\n\n');
 

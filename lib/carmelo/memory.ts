@@ -3,6 +3,7 @@
 // guessing. No DB / network here — fully unit-testable.
 
 import type { MakeStats } from '@/lib/agents/analytics';
+import type { SavModelStat } from 'app/db';
 
 export type LearningRecord = {
   vehiculeResume?: string | null;
@@ -85,6 +86,23 @@ export function buildStatsBlock(makeStats: MakeStats[]): string {
     '--- PERFORMANCES RÉELLES PAR MARQUE (GP-CARS) ---',
     ...lines,
     "Ajuste ton score de rotation et ta prudence en fonction de ces données réelles. Si une marque se vend lentement ou génère peu de marge, sois plus exigeant sur le prix d'achat.",
+  ].join('\n');
+}
+
+// Signal qualité SAV (boucle Garantie → Achat) : les modèles qui génèrent des dossiers
+// de garantie / litiges doivent rendre Carmelo plus prudent à l'achat.
+export function buildSavBlock(savStats: SavModelStat[]): string {
+  const relevant = savStats.filter((s) => s.dossiers >= 1);
+  if (relevant.length === 0) return '';
+  const lines = relevant.slice(0, 12).map((s) => {
+    const label = [s.make, s.model].filter(Boolean).join(' ') || 'Modèle inconnu';
+    const litige = s.litiges > 0 ? `, dont ${s.litiges} litige${s.litiges > 1 ? 's' : ''}` : '';
+    return `- ${label} : ${s.dossiers} dossier${s.dossiers > 1 ? 's' : ''} SAV${litige}`;
+  });
+  return [
+    '--- HISTORIQUE SAV / GARANTIE (GP-CARS) ---',
+    ...lines,
+    "Ces modèles ont généré du SAV chez GP-CARS. Si le véhicule analysé correspond à un modèle à SAV/litiges fréquents, augmente la prudence : provision réparations plus élevée, marge cible plus stricte, ou refus si le risque récurrent est avéré.",
   ].join('\n');
 }
 

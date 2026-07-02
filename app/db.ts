@@ -1876,6 +1876,20 @@ export async function getAtelierInterventions(email: string): Promise<AtelierInt
     .orderBy(desc(atelierIntervention.createdAt));
 }
 
+// Interventions atelier pour un véhicule donné — utilisé par l'Agent Garantie
+// pour décider sur la base du diagnostic technique réel du mécanicien.
+export async function getAtelierInterventionsForVehicle(
+  email: string,
+  vehicleId: number,
+): Promise<AtelierInterventionRecord[]> {
+  await ensureSchema();
+  return await getDb()
+    .select()
+    .from(atelierIntervention)
+    .where(and(eq(atelierIntervention.email, email), eq(atelierIntervention.vehicleId, vehicleId)))
+    .orderBy(desc(atelierIntervention.createdAt));
+}
+
 export async function getAtelierIntervention(id: number, email: string): Promise<AtelierInterventionRecord | null> {
   await ensureSchema();
   const rows = await getDb()
@@ -2241,6 +2255,27 @@ export async function getGarantieStats(email: string): Promise<{
   const tauxPriseEnCharge = decides > 0 ? Math.round((prises / decides) * 100) : 0;
 
   return { total, actifs, litiges, resolus, coutTotal, coutMoyen, tauxPriseEnCharge };
+}
+
+// Fréquence des dossiers SAV / litiges par modèle — boucle Garantie → Achat.
+// Permet à Carmelo d'être prudent à l'achat sur les modèles qui génèrent du SAV.
+export type SavModelStat = { make: string; model: string; dossiers: number; litiges: number };
+
+export async function getSavStatsByModel(email: string): Promise<SavModelStat[]> {
+  await ensureSchema();
+  const dossiers = await getGarantieDossiers(email);
+  const byModel = new Map<string, SavModelStat>();
+  for (const d of dossiers) {
+    const make = (d.vehicleMake ?? '').trim();
+    const model = (d.vehicleModel ?? '').trim();
+    if (!make && !model) continue;
+    const key = `${make.toLowerCase()}|${model.toLowerCase()}`;
+    if (!byModel.has(key)) byModel.set(key, { make, model, dossiers: 0, litiges: 0 });
+    const stat = byModel.get(key)!;
+    stat.dossiers += 1;
+    if (['litige', 'expertise', 'procedure'].includes(d.status ?? '')) stat.litiges += 1;
+  }
+  return Array.from(byModel.values()).sort((a, b) => b.dossiers - a.dossiers);
 }
 
 // ============================================================

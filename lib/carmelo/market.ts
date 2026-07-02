@@ -8,7 +8,7 @@
 //     the GP-CARS max buy price that lands OUR resale in the "bonne affaire"
 //     band while preserving margin.
 
-import { PLANCHER_FRAIS, MARGES, GP_CARS_PARAMS } from './config';
+import { DEFAULT_GARAGE_CONFIG, plancherFrais, type GarageConfig } from './garage-config';
 
 // Target our resale just under the market median → competitive, fast rotation,
 // and labelled a good deal by the platforms' algorithms.
@@ -99,14 +99,17 @@ export type Opportunity = {
 export function evaluateOpportunity(
   askingPrice: number,
   stats: MarketStats,
+  config: GarageConfig = DEFAULT_GARAGE_CONFIG,
 ): Opportunity {
+  const MARGES = config.margins;
+  const GP_CARS_PARAMS = config.params;
   const targetSell = Math.round(stats.median * SELL_POSITION_FACTOR);
   const tier: 'standard' | 'premium' = targetSell >= 20000 ? 'premium' : 'standard';
   const marginTarget = MARGES[tier].cible;
   const cushion = Math.round(
     (targetSell * GP_CARS_PARAMS.coussin_negociation_client_pct) / 100,
   );
-  const costs = PLANCHER_FRAIS + SCREENING_PROVISION;
+  const costs = plancherFrais(config) + SCREENING_PROVISION;
 
   const maxBuy = targetSell - marginTarget - costs - cushion;
   const marginAtAsk = targetSell - askingPrice - costs - cushion;

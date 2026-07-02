@@ -1,6 +1,6 @@
 // Pre-analysis validation — runs BEFORE Claude API call to block obvious errors early.
 
-import { GP_CARS_PARAMS } from '@/lib/carmelo/config';
+import { DEFAULT_GARAGE_CONFIG, type GarageConfig } from '@/lib/carmelo/garage-config';
 
 export interface PreValidationResult {
   ok: boolean;
@@ -19,7 +19,8 @@ export function preValidateListing(opts: {
   scrapedAt?: Date;
   comparablesCount?: number;
   askingPrice?: number;
-}): PreValidationResult {
+}, config: GarageConfig = DEFAULT_GARAGE_CONFIG): PreValidationResult {
+  const GP_CARS_PARAMS = config.params;
   const blocking: string[] = [];
   const warnings: string[] = [];
 

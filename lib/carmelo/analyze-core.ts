@@ -5,9 +5,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { buildCarmeloSystemPrompt } from './system-prompt';
 import { fetchListing } from './fetch-listing';
-import { selectRelevant, buildMemoryBlock, buildStatsBlock } from './memory';
+import { selectRelevant, buildMemoryBlock, buildStatsBlock, buildSavBlock } from './memory';
 import { parseReport } from './parse';
-import { saveAnalysis, getVehiclesForMemory, createVehicle, saveControllerResult, getVehicleSummaries, buildDemandBlock, recordPricePoint, getLastKnownPrice, getGarageConfig } from 'app/db';
+import { saveAnalysis, getVehiclesForMemory, createVehicle, saveControllerResult, getVehicleSummaries, buildDemandBlock, recordPricePoint, getLastKnownPrice, getGarageConfig, getSavStatsByModel } from 'app/db';
 import { computeMakeStats } from '@/lib/agents/analytics';
 import { runHardRules } from '@/lib/agents/controller/system-prompt';
 import { emit } from '@/lib/events/publish';
@@ -41,18 +41,21 @@ export async function runCarmeloAnalysis(
   let memoryBlock = '';
   let statsBlock = '';
   let demandBlock = '';
+  let savBlock = '';
   let priceDropNote = '';
   const config = await getGarageConfig(email);
   try {
-    const [past, summaries, demand, lastPrice] = await Promise.all([
+    const [past, summaries, demand, lastPrice, savStats] = await Promise.all([
       getVehiclesForMemory(email, 40),
       getVehicleSummaries(email),
       buildDemandBlock(email),
       getLastKnownPrice(email, url),
+      getSavStatsByModel(email).catch(() => []),
     ]);
     memoryBlock = buildMemoryBlock(selectRelevant(past, listing.text));
     statsBlock = buildStatsBlock(computeMakeStats(summaries));
     demandBlock = demand;
+    savBlock = buildSavBlock(savStats);
 
     // Detect price drop since last analysis of this URL
     if (lastPrice && listing.text) {
@@ -73,6 +76,7 @@ export async function runCarmeloAnalysis(
   ];
   if (priceDropNote) parts.push(priceDropNote);
   if (statsBlock) parts.push(statsBlock);
+  if (savBlock) parts.push(savBlock);
   if (memoryBlock) parts.push(memoryBlock);
   if (demandBlock) parts.push(demandBlock);
 

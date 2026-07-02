@@ -6,6 +6,7 @@ import {
   positionPrice,
   POSITIONING_LABELS,
 } from '@/lib/carmelo/market';
+import { getGarageConfig } from 'app/db';
 
 // Pure market study — no AI, no external data. The caller provides the asking
 // price and a list of comparable market prices (from any source).
@@ -33,7 +34,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const opportunity = evaluateOpportunity(askingPrice, stats);
+  const config = await getGarageConfig(session.user.email);
+  const opportunity = evaluateOpportunity(askingPrice, stats, config);
 
   return NextResponse.json({
     opportunity,

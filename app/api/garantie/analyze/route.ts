@@ -3,8 +3,9 @@ import Anthropic from '@anthropic-ai/sdk';
 import { auth } from 'app/auth';
 import {
   getGarantieDossier, updateGarantieDossier,
-  saveGarantiePieces, publishEvent,
+  saveGarantiePieces, publishEvent, getAtelierInterventionsForVehicle,
 } from 'app/db';
+import type { AtelierInterventionRecord } from 'app/db';
 import { buildGarantieSystemPrompt } from '@/lib/agents/garantie/system-prompt';
 import { ACTIVE_RULESET } from '@/lib/agents/garantie/ruleset';
 import type { GarantieCoverage, GarantieStatus } from '@/lib/agents/shared-types';
@@ -65,6 +66,20 @@ function buildDossierMessage(dossier: Awaited<ReturnType<typeof getGarantieDossi
   return lines.join('\n');
 }
 
+function buildAtelierBlock(interventions: AtelierInterventionRecord[]): string {
+  if (!interventions || interventions.length === 0) return '';
+  const lines: string[] = ['## DIAGNOSTIC ATELIER (source technique — à privilégier sur le récit client)'];
+  for (const i of interventions) {
+    const parts = [`- [${i.type ?? 'intervention'} · ${i.status ?? '?'}]`];
+    if (i.description) parts.push(i.description);
+    const cost = i.realCost ?? i.estimatedCost;
+    if (cost != null) parts.push(`(coût ${i.realCost != null ? 'réel' : 'estimé'} : ${cost.toLocaleString('fr-BE')} €)`);
+    lines.push(parts.join(' '));
+  }
+  lines.push('\nUtilise ce diagnostic technique comme source prioritaire pour qualifier le défaut (conformité vs usure).');
+  return lines.join('\n');
+}
+
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.email) return NextResponse.json({ error: 'Non autorisé.' }, { status: 401 });
@@ -93,7 +108,20 @@ export async function POST(req: NextRequest) {
   await updateGarantieDossier(body.dossierId, email, { status: 'en_analyse' as GarantieStatus });
 
   const client = new Anthropic({ apiKey, maxRetries: 2 });
-  const userMessage = buildDossierMessage(dossier);
+
+  // Diagnostic atelier réel (boucle Atelier → Garantie) — l'information la plus
+  // importante pour trancher une garantie. Injecté si le dossier est lié à un véhicule.
+  let atelierBlock = '';
+  if (dossier.vehicleId) {
+    try {
+      const interventions = await getAtelierInterventionsForVehicle(email, dossier.vehicleId);
+      atelierBlock = buildAtelierBlock(interventions);
+    } catch (err) {
+      console.error('Garantie: diagnostic atelier indisponible', err);
+    }
+  }
+
+  const userMessage = [buildDossierMessage(dossier), atelierBlock].filter(Boolean).join('\n\n');
 
   let rawText = '';
   try {
